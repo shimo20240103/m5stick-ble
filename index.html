@@ -13,11 +13,9 @@ button { font-size:16px; padding:10px; margin:10px; }
 <button onclick="connect()">接続</button>
 <div id="status">未接続</div>
 <pre id="data">cross:0 t:0 k:0 15:0 45:0 90:0</pre>
-
 <script>
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
-
 async function connect() {
   try {
     const device = await navigator.bluetooth.requestDevice({
@@ -27,7 +25,6 @@ async function connect() {
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(serviceUUID);
     const characteristic = await service.getCharacteristic(charUUID);
-
     await characteristic.startNotifications();
     characteristic.addEventListener("characteristicvaluechanged", e=>{
       const value = new TextDecoder().decode(e.target.value);
@@ -43,11 +40,10 @@ async function connect() {
           `cross:${cross} t:${t}ms k:${k} 15:${c15} 45:${c45} 90:${c90}`;
       }
     });
-
-    document.getElementById('status').textContent = "✅ 接続成功";
+    document.getElementById('status').textContent = ":チェックマーク_緑: 接続成功";
   } catch(err){
     console.error(err);
-    document.getElementById('status').textContent = "❌ 接続失敗:"+err;
+    document.getElementById('status').textContent = ":x: 接続失敗:"+err;
   }
 }
 </script>
