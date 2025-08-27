@@ -27,9 +27,10 @@
 
     async function connect() {
       try {
+        // acceptAllDevices:trueで接続しやすく
         const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,           // すべてのBLEデバイスを対象
-          optionalServices: [serviceUUID]   // ESP32のサービスUUID
+          acceptAllDevices: true,
+          optionalServices: [serviceUUID]
         });
 
         const server = await device.gatt.connect();
@@ -60,24 +61,25 @@
       }
     }
 
-    // グラフ描画
-    let prevCanvas = ctx.getImageData(0, 0, width, height); // 初期値
     function drawGraph(ax, ay, az) {
       const centerY = height/2;
-      const scale = 20;
+      const scale = 20; // グラフ縦倍率
 
       const xHeight = centerY - ax*scale;
       const yHeight = centerY - ay*scale;
       const zHeight = centerY - az*scale;
 
-      // 1列スクロール
+      // 1列分スクロール
       ctx.drawImage(canvas, 1, 0, width-1, height, 0, 0, width-1, height);
       ctx.clearRect(width-1, 0, 1, height);
 
       // 新しい値を描画
-      ctx.fillStyle = 'red';   ctx.fillRect(width-1, xHeight, 1, 1);
-      ctx.fillStyle = 'green'; ctx.fillRect(width-1, yHeight, 1, 1);
-      ctx.fillStyle = 'blue';  ctx.fillRect(width-1, zHeight, 1, 1);
+      ctx.fillStyle = 'red';
+      ctx.fillRect(width-1, xHeight, 1, 1);
+      ctx.fillStyle = 'green';
+      ctx.fillRect(width-1, yHeight, 1, 1);
+      ctx.fillStyle = 'blue';
+      ctx.fillRect(width-1, zHeight, 1, 1);
     }
   </script>
 </body>
