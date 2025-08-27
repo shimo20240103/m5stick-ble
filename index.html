@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>M5Stick 加速度</title>
+</head>
+<body>
+  <button onclick="connect()">接続</button>
+  <pre id="log"></pre>
+
+  <script>
+    async function connect() {
+      const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+      const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f";
+
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "M5StickC_Accel" }],
+          optionalServices: [serviceUUID]
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(serviceUUID);
+        const characteristic = await service.getCharacteristic(charUUID);
+
+        await characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", e => {
+          const value = new TextDecoder().decode(e.target.value);
+          document.getElementById("log").textContent = value;
+        });
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
