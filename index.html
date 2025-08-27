@@ -1,51 +1,73 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>足組み検知グラフ</title>
-<style>
-body { font-family: sans-serif; text-align: center; }
-button { font-size:16px; padding:10px; margin:10px; }
-</style>
+  <meta charset="utf-8">
+  <title>M5Stick 加速度グラフ</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    canvas { border:1px solid black; }
+    button { font-size: 16px; padding: 10px; margin: 10px; }
+  </style>
 </head>
 <body>
-<h1>足組み検知</h1>
-<button onclick="connect()">接続</button>
-<div id="status">未接続</div>
-<pre id="data">cross:0 t:0 k:0 15:0 45:0 90:0</pre>
-<script>
-const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
-async function connect() {
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices:true,
-      optionalServices:[serviceUUID]
-    });
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(serviceUUID);
-    const characteristic = await service.getCharacteristic(charUUID);
-    await characteristic.startNotifications();
-    characteristic.addEventListener("characteristicvaluechanged", e=>{
-      const value = new TextDecoder().decode(e.target.value);
-      const parts = value.split(',');
-      if(parts.length >= 6){
-        const cross = parts[0];
-        const t = parts[1];
-        const k = parts[2];
-        const c15 = parts[3];
-        const c45 = parts[4];
-        const c90 = parts[5];
-        document.getElementById('data').textContent =
-          `cross:${cross} t:${t}ms k:${k} 15:${c15} 45:${c45} 90:${c90}`;
+  <h1>M5Stick 加速度グラフ</h1>
+  <button onclick="connect()">接続</button>
+  <div id="status">未接続</div>
+  <canvas id="graph" width="320" height="160"></canvas>
+  <pre id="values">X:0 Y:0 Z:0</pre>
+  <script>
+    const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a"; // ESP32と一致
+    const canvas = document.getElementById('graph');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    async function connect() {
+      try {
+        // acceptAllDevices:trueで接続しやすく
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [serviceUUID]
+        });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(serviceUUID);
+        const characteristic = await service.getCharacteristic(charUUID);
+        await characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", e => {
+          const value = new TextDecoder().decode(e.target.value);
+          const parts = value.split(',');
+          if (parts.length >= 3) {
+            const ax = parseFloat(parts[0]);
+            const ay = parseFloat(parts[1]);
+            const az = parseFloat(parts[2]);
+            document.getElementById('values').textContent =
+              `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+            drawGraph(ax, ay, az);
+          }
+        });
+        document.getElementById('status').textContent = ":チェックマーク_緑: 接続成功";
+      } catch (err) {
+        console.error(err);
+        document.getElementById('status').textContent = ":x: 接続失敗: " + err;
       }
-    });
-    document.getElementById('status').textContent = ":チェックマーク_緑: 接続成功";
-  } catch(err){
-    console.error(err);
-    document.getElementById('status').textContent = ":x: 接続失敗:"+err;
-  }
-}
-</script>
+    }
+    function drawGraph(ax, ay, az) {
+      const centerY = height/2;
+      const scale = 20; // グラフ縦倍率
+      const xHeight = centerY - ax*scale;
+      const yHeight = centerY - ay*scale;
+      const zHeight = centerY - az*scale;
+      // 1列分スクロール
+      ctx.drawImage(canvas, 1, 0, width-1, height, 0, 0, width-1, height);
+      ctx.clearRect(width-1, 0, 1, height);
+      // 新しい値を描画
+      ctx.fillStyle = 'red';
+      ctx.fillRect(width-1, xHeight, 1, 1);
+      ctx.fillStyle = 'green';
+      ctx.fillRect(width-1, yHeight, 1, 1);
+      ctx.fillStyle = 'blue';
+      ctx.fillRect(width-1, zHeight, 1, 1);
+    }
+  </script>
 </body>
 </html>
