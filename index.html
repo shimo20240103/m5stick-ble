@@ -24,16 +24,12 @@
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
-    let graphX = 0;
-
-    // 前フレームの値を保持
-    let prevX = height/2, prevY = height/2, prevZ = height/2;
 
     async function connect() {
       try {
         const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: "M5StickC_Accel" }],
-          optionalServices: [serviceUUID]
+          acceptAllDevices: true,           // すべてのBLEデバイスを対象
+          optionalServices: [serviceUUID]   // ESP32のサービスUUID
         });
 
         const server = await device.gatt.connect();
@@ -43,18 +39,15 @@
         await characteristic.startNotifications();
         characteristic.addEventListener("characteristicvaluechanged", e => {
           const value = new TextDecoder().decode(e.target.value);
-          // "ax,ay,az" 形式を分割
           const parts = value.split(',');
           if (parts.length >= 3) {
             const ax = parseFloat(parts[0]);
             const ay = parseFloat(parts[1]);
             const az = parseFloat(parts[2]);
 
-            // 最新値表示
             document.getElementById('values').textContent =
               `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
 
-            // グラフ描画
             drawGraph(ax, ay, az);
           }
         });
@@ -67,25 +60,24 @@
       }
     }
 
+    // グラフ描画
+    let prevCanvas = ctx.getImageData(0, 0, width, height); // 初期値
     function drawGraph(ax, ay, az) {
       const centerY = height/2;
-      const scale = 20; // グラフ縦倍率
+      const scale = 20;
 
       const xHeight = centerY - ax*scale;
       const yHeight = centerY - ay*scale;
       const zHeight = centerY - az*scale;
 
-      // 1列分スクロール
+      // 1列スクロール
       ctx.drawImage(canvas, 1, 0, width-1, height, 0, 0, width-1, height);
       ctx.clearRect(width-1, 0, 1, height);
 
       // 新しい値を描画
-      ctx.fillStyle = 'red';
-      ctx.fillRect(width-1, xHeight, 1, 1);
-      ctx.fillStyle = 'green';
-      ctx.fillRect(width-1, yHeight, 1, 1);
-      ctx.fillStyle = 'blue';
-      ctx.fillRect(width-1, zHeight, 1, 1);
+      ctx.fillStyle = 'red';   ctx.fillRect(width-1, xHeight, 1, 1);
+      ctx.fillStyle = 'green'; ctx.fillRect(width-1, yHeight, 1, 1);
+      ctx.fillStyle = 'blue';  ctx.fillRect(width-1, zHeight, 1, 1);
     }
   </script>
 </body>
