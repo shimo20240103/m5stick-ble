@@ -11,7 +11,7 @@
   <script>
     async function connect() {
       const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-      const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f";
+      const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a"; // 修正
 
       try {
         const device = await navigator.bluetooth.requestDevice({
@@ -29,8 +29,11 @@
           document.getElementById("log").textContent = value;
         });
 
+        document.getElementById("log").textContent = "✅ 接続成功";
+
       } catch (err) {
         console.error(err);
+        document.getElementById("log").textContent = "❌ 接続失敗: " + err;
       }
     }
   </script>
