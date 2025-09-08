@@ -2,21 +2,65 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5Stick 加速度グラフ（線グラフ版）</title>
+  <title>M5Stick 加速度グラフ（ミント版）</title>
   <style>
-    body { font-family: sans-serif; text-align: center; }
-    canvas { border:1px solid black; margin-top:10px; }
-    button { font-size: 16px; padding: 10px; margin: 5px; }
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #e0f7f1; /* ミント系背景 */
+      color: #004d40;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      background-color: #a7ffeb;
+      margin: 0;
+      padding: 20px 0;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      border-bottom-left-radius: 20px;
+      border-bottom-right-radius: 20px;
+    }
+    canvas {
+      border: 2px solid #004d40;
+      border-radius: 10px;
+      margin-top: 20px;
+      background-color: #b2dfdb;
+    }
+    button {
+      font-size: 16px;
+      padding: 10px 20px;
+      margin: 10px;
+      border: none;
+      border-radius: 10px;
+      background-color: #26a69a;
+      color: white;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover {
+      background-color: #00796b;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    #values {
+      font-size: 18px;
+      margin-top: 10px;
+      background-color: #b2dfdb;
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 10px;
+    }
   </style>
-  <!-- Excel出力用ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <h1>M5Stick 加速度グラフ（線グラフ版）</h1>
+  <h1>M5Stick 加速度グラフ</h1>
   <button onclick="connect()">接続</button>
   <button onclick="downloadExcel()">Excelダウンロード</button>
   <div id="status">未接続</div>
-  <canvas id="graph" width="400" height="200"></canvas>
+  <canvas id="graph" width="600" height="300"></canvas>
   <pre id="values">X:0 Y:0 Z:0</pre>
 
   <script>
@@ -27,17 +71,14 @@
     const width = canvas.width;
     const height = canvas.height;
 
-    // Excel用保存配列
-    let accelData = [["Time", "X", "Y", "Z"]];
-
-    // 前回の値
+    let accelData = [["Time","X","Y","Z"]];
     let prevX = height/2, prevY = height/2, prevZ = height/2;
 
     // 初期背景
-    ctx.fillStyle = "#f8f8f8";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#b2dfdb";
+    ctx.fillRect(0,0,width,height);
     // 中央線
-    ctx.strokeStyle = "#aaa";
+    ctx.strokeStyle = "#004d40";
     ctx.beginPath();
     ctx.moveTo(0, height/2);
     ctx.lineTo(width, height/2);
@@ -57,7 +98,7 @@
         characteristic.addEventListener("characteristicvaluechanged", e => {
           const value = new TextDecoder().decode(e.target.value);
           const parts = value.split(',');
-          if (parts.length >= 3) {
+          if(parts.length>=3){
             const ax = parseFloat(parts[0]);
             const ay = parseFloat(parts[1]);
             const az = parseFloat(parts[2]);
@@ -65,46 +106,46 @@
             document.getElementById('values').textContent =
               `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
 
-            drawGraph(ax, ay, az);
-            accelData.push([new Date().toLocaleTimeString(), ax, ay, az]);
+            drawGraph(ax,ay,az);
+            accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
           }
         });
         document.getElementById('status').textContent = "✅ 接続成功";
-      } catch (err) {
+      } catch(err){
         console.error(err);
-        document.getElementById('status').textContent = "❌ 接続失敗: " + err;
+        document.getElementById('status').textContent = "❌ 接続失敗: "+err;
       }
     }
 
     function drawGraph(ax, ay, az) {
       const centerY = height/2;
-      const scale = 20; // スケーリング調整
+      const scale = 25; // 見やすく調整
       const xHeight = centerY - ax*scale;
       const yHeight = centerY - ay*scale;
       const zHeight = centerY - az*scale;
 
-      // Canvasを左にスクロール
-      ctx.drawImage(canvas, 1, 0, width-1, height, 0, 0, width-1, height);
-      ctx.clearRect(width-1, 0, 1, height);
+      // 左にスクロール
+      ctx.drawImage(canvas,1,0,width-1,height,0,0,width-1,height);
+      ctx.clearRect(width-1,0,1,height);
 
-      // X線 (赤)
-      ctx.strokeStyle = 'red';
+      // X線 赤
+      ctx.strokeStyle = '#ff5252';
       ctx.beginPath();
       ctx.moveTo(width-2, prevX);
       ctx.lineTo(width-1, xHeight);
       ctx.stroke();
       prevX = xHeight;
 
-      // Y線 (緑)
-      ctx.strokeStyle = 'green';
+      // Y線 緑
+      ctx.strokeStyle = '#00c853';
       ctx.beginPath();
       ctx.moveTo(width-2, prevY);
       ctx.lineTo(width-1, yHeight);
       ctx.stroke();
       prevY = yHeight;
 
-      // Z線 (青)
-      ctx.strokeStyle = 'blue';
+      // Z線 青
+      ctx.strokeStyle = '#2979ff';
       ctx.beginPath();
       ctx.moveTo(width-2, prevZ);
       ctx.lineTo(width-1, zHeight);
@@ -115,8 +156,8 @@
     function downloadExcel() {
       let wb = XLSX.utils.book_new();
       let ws = XLSX.utils.aoa_to_sheet(accelData);
-      XLSX.utils.book_append_sheet(wb, ws, "AccelData");
-      XLSX.writeFile(wb, "accel_data.xlsx");
+      XLSX.utils.book_append_sheet(wb, ws,"AccelData");
+      XLSX.writeFile(wb,"accel_data.xlsx");
     }
   </script>
 </body>
