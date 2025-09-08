@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5Stick 加速度グラフ（ミント版）</title>
+  <title>M5Stick 加速度グラフ（3図版）</title>
   <style>
     body {
       font-family: 'Arial', sans-serif;
@@ -20,11 +20,16 @@
       border-bottom-left-radius: 20px;
       border-bottom-right-radius: 20px;
     }
+    .graph-container {
+      margin: 20px auto;
+      width: 600px;
+    }
     canvas {
       border: 2px solid #004d40;
       border-radius: 10px;
-      margin-top: 20px;
+      margin-top: 10px;
       background-color: #b2dfdb;
+      display: block;
     }
     button {
       font-size: 16px;
@@ -56,39 +61,54 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <h1>M5Stick 加速度グラフ</h1>
+  <h1>M5Stick 加速度グラフ（X/Y/Z個別表示）</h1>
   <button onclick="connect()">接続</button>
   <button onclick="downloadExcel()">Excelダウンロード</button>
   <div id="status">未接続</div>
-  <canvas id="graph" width="600" height="300"></canvas>
   <pre id="values">X:0 Y:0 Z:0</pre>
+
+  <div class="graph-container">
+    <h3>X軸</h3>
+    <canvas id="graphX" width="600" height="150"></canvas>
+    <h3>Y軸</h3>
+    <canvas id="graphY" width="600" height="150"></canvas>
+    <h3>Z軸</h3>
+    <canvas id="graphZ" width="600" height="150"></canvas>
+  </div>
 
   <script>
     const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
-    const canvas = document.getElementById('graph');
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+
+    const canvasX = document.getElementById('graphX');
+    const ctxX = canvasX.getContext('2d');
+    const canvasY = document.getElementById('graphY');
+    const ctxY = canvasY.getContext('2d');
+    const canvasZ = document.getElementById('graphZ');
+    const ctxZ = canvasZ.getContext('2d');
+
+    const width = canvasX.width;
+    const height = canvasX.height;
 
     let accelData = [["Time","X","Y","Z"]];
     let prevX = height/2, prevY = height/2, prevZ = height/2;
 
-    // 初期背景
-    ctx.fillStyle = "#b2dfdb";
-    ctx.fillRect(0,0,width,height);
-    // 中央線
-    ctx.strokeStyle = "#004d40";
-    ctx.beginPath();
-    ctx.moveTo(0, height/2);
-    ctx.lineTo(width, height/2);
-    ctx.stroke();
+    // 初期背景と中央線
+    [ctxX, ctxY, ctxZ].forEach(ctx => {
+      ctx.fillStyle = "#b2dfdb";
+      ctx.fillRect(0,0,width,height);
+      ctx.strokeStyle = "#004d40";
+      ctx.beginPath();
+      ctx.moveTo(0,height/2);
+      ctx.lineTo(width,height/2);
+      ctx.stroke();
+    });
 
     async function connect() {
       try {
         const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [serviceUUID]
+          acceptAllDevices:true,
+          optionalServices:[serviceUUID]
         });
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(serviceUUID);
@@ -106,7 +126,14 @@
             document.getElementById('values').textContent =
               `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
 
-            drawGraph(ax,ay,az);
+            drawGraph(ctxX, ax, prevX);
+            drawGraph(ctxY, ay, prevY);
+            drawGraph(ctxZ, az, prevZ);
+
+            prevX = height/2 - ax*25;
+            prevY = height/2 - ay*25;
+            prevZ = height/2 - az*25;
+
             accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
           }
         });
@@ -117,43 +144,22 @@
       }
     }
 
-    function drawGraph(ax, ay, az) {
+    function drawGraph(ctx, value, prev){
       const centerY = height/2;
-      const scale = 25; // 見やすく調整
-      const xHeight = centerY - ax*scale;
-      const yHeight = centerY - ay*scale;
-      const zHeight = centerY - az*scale;
+      const scale = 25;
+      const yHeight = centerY - value*scale;
 
-      // 左にスクロール
-      ctx.drawImage(canvas,1,0,width-1,height,0,0,width-1,height);
+      ctx.drawImage(ctx.canvas,1,0,width-1,height,0,0,width-1,height);
       ctx.clearRect(width-1,0,1,height);
 
-      // X線 赤
-      ctx.strokeStyle = '#ff5252';
+      ctx.strokeStyle = "#004d40";
       ctx.beginPath();
-      ctx.moveTo(width-2, prevX);
-      ctx.lineTo(width-1, xHeight);
-      ctx.stroke();
-      prevX = xHeight;
-
-      // Y線 緑
-      ctx.strokeStyle = '#00c853';
-      ctx.beginPath();
-      ctx.moveTo(width-2, prevY);
+      ctx.moveTo(width-2, prev);
       ctx.lineTo(width-1, yHeight);
       ctx.stroke();
-      prevY = yHeight;
-
-      // Z線 青
-      ctx.strokeStyle = '#2979ff';
-      ctx.beginPath();
-      ctx.moveTo(width-2, prevZ);
-      ctx.lineTo(width-1, zHeight);
-      ctx.stroke();
-      prevZ = zHeight;
     }
 
-    function downloadExcel() {
+    function downloadExcel(){
       let wb = XLSX.utils.book_new();
       let ws = XLSX.utils.aoa_to_sheet(accelData);
       XLSX.utils.book_append_sheet(wb, ws,"AccelData");
