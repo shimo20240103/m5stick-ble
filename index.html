@@ -57,7 +57,7 @@
 </head>
 <body>
 <h1>M5Stick 加速度線グラフ（X/Y/Z個別）</h1>
-<button onclick="connect()">接続</button>
+<button id="connectBtn" onclick="connect()">接続</button>
 <button onclick="downloadExcel()">Excelダウンロード</button>
 <div id="status">未接続</div>
 <pre id="values">X:0 Y:0 Z:0</pre>
@@ -100,6 +100,8 @@ let prevX = height/2, prevY = height/2, prevZ = height/2;
 });
 
 async function connect() {
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
   try {
     const device = await navigator.bluetooth.requestDevice({
       acceptAllDevices:true,
@@ -121,21 +123,19 @@ async function connect() {
         document.getElementById('values').textContent =
           `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
 
-        drawGraph(ctxX, ax, prevX, '#ff5252');
-        drawGraph(ctxY, ay, prevY, '#00c853');
-        drawGraph(ctxZ, az, prevZ, '#2979ff');
-
-        prevX = height/2 - ax*25;
-        prevY = height/2 - ay*25;
-        prevZ = height/2 - az*25;
+        prevX = drawGraph(ctxX, ax, prevX, '#ff5252');
+        prevY = drawGraph(ctxY, ay, prevY, '#00c853');
+        prevZ = drawGraph(ctxZ, az, prevZ, '#2979ff');
 
         accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
+        if(accelData.length>1000) accelData.splice(1,1); // データ件数制限
       }
     });
     document.getElementById('status').textContent = "✅ 接続成功";
   } catch(err){
     console.error(err);
     document.getElementById('status').textContent = "❌ 接続失敗: "+err;
+    btn.disabled = false;
   }
 }
 
@@ -145,8 +145,8 @@ function drawGraph(ctx, value, prev, color){
   const yHeight = centerY - value*scale;
 
   // 左にスクロール
-  ctx.drawImage(ctx.canvas,1,0,width-1,height,0,0,width-1,height);
-  ctx.clearRect(width-1,0,1,height);
+  ctx.drawImage(ctx.canvas, 1, 0, width-1, height, 0, 0, width-1, height);
+  ctx.clearRect(width-1, 0, 1, height);
 
   // 線で描画
   ctx.strokeStyle = color;
@@ -154,6 +154,15 @@ function drawGraph(ctx, value, prev, color){
   ctx.moveTo(width-2, prev);
   ctx.lineTo(width-1, yHeight);
   ctx.stroke();
+
+  // 中央線を再描画
+  ctx.strokeStyle = "#004d40";
+  ctx.beginPath();
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(width, centerY);
+  ctx.stroke();
+
+  return yHeight; // prev更新用
 }
 
 function downloadExcel(){
