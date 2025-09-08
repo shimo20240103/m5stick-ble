@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5Stick 加速度グラフ（3図版）</title>
+  <title>M5Stick 加速度グラフ（線グラフ3図）</title>
   <style>
     body {
       font-family: 'Arial', sans-serif;
-      background-color: #e0f7f1; /* ミント系背景 */
+      background-color: #e0f7f1; 
       color: #004d40;
       text-align: center;
       margin: 0;
@@ -42,13 +42,8 @@
       cursor: pointer;
       transition: 0.2s;
     }
-    button:hover {
-      background-color: #00796b;
-    }
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
-    }
+    button:hover { background-color: #00796b; }
+    #status { margin-top: 10px; font-weight: bold; }
     #values {
       font-size: 18px;
       margin-top: 10px;
@@ -61,110 +56,112 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <h1>M5Stick 加速度グラフ（X/Y/Z個別表示）</h1>
-  <button onclick="connect()">接続</button>
-  <button onclick="downloadExcel()">Excelダウンロード</button>
-  <div id="status">未接続</div>
-  <pre id="values">X:0 Y:0 Z:0</pre>
+<h1>M5Stick 加速度線グラフ（X/Y/Z個別）</h1>
+<button onclick="connect()">接続</button>
+<button onclick="downloadExcel()">Excelダウンロード</button>
+<div id="status">未接続</div>
+<pre id="values">X:0 Y:0 Z:0</pre>
 
-  <div class="graph-container">
-    <h3>X軸</h3>
-    <canvas id="graphX" width="600" height="150"></canvas>
-    <h3>Y軸</h3>
-    <canvas id="graphY" width="600" height="150"></canvas>
-    <h3>Z軸</h3>
-    <canvas id="graphZ" width="600" height="150"></canvas>
-  </div>
+<div class="graph-container">
+  <h3>X軸</h3>
+  <canvas id="graphX" width="600" height="150"></canvas>
+  <h3>Y軸</h3>
+  <canvas id="graphY" width="600" height="150"></canvas>
+  <h3>Z軸</h3>
+  <canvas id="graphZ" width="600" height="150"></canvas>
+</div>
 
-  <script>
-    const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-    const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
+<script>
+const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-    const canvasX = document.getElementById('graphX');
-    const ctxX = canvasX.getContext('2d');
-    const canvasY = document.getElementById('graphY');
-    const ctxY = canvasY.getContext('2d');
-    const canvasZ = document.getElementById('graphZ');
-    const ctxZ = canvasZ.getContext('2d');
+const canvasX = document.getElementById('graphX');
+const ctxX = canvasX.getContext('2d');
+const canvasY = document.getElementById('graphY');
+const ctxY = canvasY.getContext('2d');
+const canvasZ = document.getElementById('graphZ');
+const ctxZ = canvasZ.getContext('2d');
 
-    const width = canvasX.width;
-    const height = canvasX.height;
+const width = canvasX.width;
+const height = canvasX.height;
 
-    let accelData = [["Time","X","Y","Z"]];
-    let prevX = height/2, prevY = height/2, prevZ = height/2;
+let accelData = [["Time","X","Y","Z"]];
+let prevX = height/2, prevY = height/2, prevZ = height/2;
 
-    // 初期背景と中央線
-    [ctxX, ctxY, ctxZ].forEach(ctx => {
-      ctx.fillStyle = "#b2dfdb";
-      ctx.fillRect(0,0,width,height);
-      ctx.strokeStyle = "#004d40";
-      ctx.beginPath();
-      ctx.moveTo(0,height/2);
-      ctx.lineTo(width,height/2);
-      ctx.stroke();
+// 初期背景と中央線
+[ctxX, ctxY, ctxZ].forEach(ctx => {
+  ctx.fillStyle = "#b2dfdb";
+  ctx.fillRect(0,0,width,height);
+  ctx.strokeStyle = "#004d40";
+  ctx.beginPath();
+  ctx.moveTo(0,height/2);
+  ctx.lineTo(width,height/2);
+  ctx.stroke();
+});
+
+async function connect() {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices:true,
+      optionalServices:[serviceUUID]
     });
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(serviceUUID);
+    const characteristic = await service.getCharacteristic(charUUID);
 
-    async function connect() {
-      try {
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices:true,
-          optionalServices:[serviceUUID]
-        });
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(serviceUUID);
-        const characteristic = await service.getCharacteristic(charUUID);
+    await characteristic.startNotifications();
+    characteristic.addEventListener("characteristicvaluechanged", e => {
+      const value = new TextDecoder().decode(e.target.value);
+      const parts = value.split(',');
+      if(parts.length>=3){
+        const ax = parseFloat(parts[0]);
+        const ay = parseFloat(parts[1]);
+        const az = parseFloat(parts[2]);
 
-        await characteristic.startNotifications();
-        characteristic.addEventListener("characteristicvaluechanged", e => {
-          const value = new TextDecoder().decode(e.target.value);
-          const parts = value.split(',');
-          if(parts.length>=3){
-            const ax = parseFloat(parts[0]);
-            const ay = parseFloat(parts[1]);
-            const az = parseFloat(parts[2]);
+        document.getElementById('values').textContent =
+          `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
 
-            document.getElementById('values').textContent =
-              `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+        drawGraph(ctxX, ax, prevX, '#ff5252');
+        drawGraph(ctxY, ay, prevY, '#00c853');
+        drawGraph(ctxZ, az, prevZ, '#2979ff');
 
-            drawGraph(ctxX, ax, prevX);
-            drawGraph(ctxY, ay, prevY);
-            drawGraph(ctxZ, az, prevZ);
+        prevX = height/2 - ax*25;
+        prevY = height/2 - ay*25;
+        prevZ = height/2 - az*25;
 
-            prevX = height/2 - ax*25;
-            prevY = height/2 - ay*25;
-            prevZ = height/2 - az*25;
-
-            accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
-          }
-        });
-        document.getElementById('status').textContent = "✅ 接続成功";
-      } catch(err){
-        console.error(err);
-        document.getElementById('status').textContent = "❌ 接続失敗: "+err;
+        accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
       }
-    }
+    });
+    document.getElementById('status').textContent = "✅ 接続成功";
+  } catch(err){
+    console.error(err);
+    document.getElementById('status').textContent = "❌ 接続失敗: "+err;
+  }
+}
 
-    function drawGraph(ctx, value, prev){
-      const centerY = height/2;
-      const scale = 25;
-      const yHeight = centerY - value*scale;
+function drawGraph(ctx, value, prev, color){
+  const centerY = height/2;
+  const scale = 25;
+  const yHeight = centerY - value*scale;
 
-      ctx.drawImage(ctx.canvas,1,0,width-1,height,0,0,width-1,height);
-      ctx.clearRect(width-1,0,1,height);
+  // 左にスクロール
+  ctx.drawImage(ctx.canvas,1,0,width-1,height,0,0,width-1,height);
+  ctx.clearRect(width-1,0,1,height);
 
-      ctx.strokeStyle = "#004d40";
-      ctx.beginPath();
-      ctx.moveTo(width-2, prev);
-      ctx.lineTo(width-1, yHeight);
-      ctx.stroke();
-    }
+  // 線で描画
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(width-2, prev);
+  ctx.lineTo(width-1, yHeight);
+  ctx.stroke();
+}
 
-    function downloadExcel(){
-      let wb = XLSX.utils.book_new();
-      let ws = XLSX.utils.aoa_to_sheet(accelData);
-      XLSX.utils.book_append_sheet(wb, ws,"AccelData");
-      XLSX.writeFile(wb,"accel_data.xlsx");
-    }
-  </script>
+function downloadExcel(){
+  let wb = XLSX.utils.book_new();
+  let ws = XLSX.utils.aoa_to_sheet(accelData);
+  XLSX.utils.book_append_sheet(wb, ws,"AccelData");
+  XLSX.writeFile(wb,"accel_data.xlsx");
+}
+</script>
 </body>
 </html>
