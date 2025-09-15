@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5Stick 加速度グラフ（滑らか線グラフ3図）</title>
+  <title>M5Stick 両足加速度グラフ</title>
   <style>
     body {
       font-family: 'Arial', sans-serif;
@@ -43,8 +43,8 @@
       transition: 0.2s;
     }
     button:hover { background-color: #00796b; }
-    #status { margin-top: 10px; font-weight: bold; }
-    #values {
+    #status1, #status2 { margin-top: 10px; font-weight: bold; }
+    #values1, #values2 {
       font-size: 18px;
       margin-top: 10px;
       background-color: #b2dfdb;
@@ -56,53 +56,73 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<h1>M5Stick 加速度線グラフ（滑らか線グラフ）</h1>
-<button id="connectBtn" onclick="connect()">接続</button>
-<button onclick="downloadExcel()">Excelダウンロード</button>
-<div id="status">未接続</div>
-<pre id="values">X:0 Y:0 Z:0</pre>
+<h1>M5Stick 両足加速度線グラフ</h1>
 
+<button id="connectBtn1" onclick="connect(1)">右足 接続</button>
+<button id="connectBtn2" onclick="connect(2)">左足 接続</button>
+<button onclick="downloadExcel()">Excelダウンロード</button>
+
+<div id="status1">右足: 未接続</div>
+<pre id="values1">X:0 Y:0 Z:0</pre>
+
+<div id="status2">左足: 未接続</div>
+<pre id="values2">X:0 Y:0 Z:0</pre>
+
+<!-- 右足グラフ -->
 <div class="graph-container">
+  <h2>右足</h2>
   <h3>X軸</h3>
-  <canvas id="graphX" width="600" height="150"></canvas>
+  <canvas id="graphX1" width="600" height="150"></canvas>
   <h3>Y軸</h3>
-  <canvas id="graphY" width="600" height="150"></canvas>
+  <canvas id="graphY1" width="600" height="150"></canvas>
   <h3>Z軸</h3>
-  <canvas id="graphZ" width="600" height="150"></canvas>
+  <canvas id="graphZ1" width="600" height="150"></canvas>
+</div>
+
+<!-- 左足グラフ -->
+<div class="graph-container">
+  <h2>左足</h2>
+  <h3>X軸</h3>
+  <canvas id="graphX2" width="600" height="150"></canvas>
+  <h3>Y軸</h3>
+  <canvas id="graphY2" width="600" height="150"></canvas>
+  <h3>Z軸</h3>
+  <canvas id="graphZ2" width="600" height="150"></canvas>
 </div>
 
 <script>
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-const canvasX = document.getElementById('graphX');
-const ctxX = canvasX.getContext('2d');
-const canvasY = document.getElementById('graphY');
-const ctxY = canvasY.getContext('2d');
-const canvasZ = document.getElementById('graphZ');
-const ctxZ = canvasZ.getContext('2d');
+let devices = {};
+let latestRight = [0,0,0]; // X,Y,Z
+let latestLeft  = [0,0,0];
 
-const width = canvasX.width;
-const height = canvasX.height;
+// Excel用データ（ヘッダ付き）
+let accelData = [["Time","RX","RY","RZ","LX","LY","LZ"]];
 
-let accelData = [["Time","X","Y","Z"]];
-let maxDataPoints = 300; // 最大描画点数
-let xData=[], yData=[], zData=[];
+// グラフ用
+let maxDataPoints = 300;
+let dataStore = {
+  1: { x:[], y:[], z:[] },
+  2: { x:[], y:[], z:[] }
+};
 
-async function connect() {
-  const btn = document.getElementById('connectBtn');
+async function connect(id){
+  const btn = document.getElementById("connectBtn"+id);
   btn.disabled = true;
   try {
     const device = await navigator.bluetooth.requestDevice({
       acceptAllDevices:true,
       optionalServices:[serviceUUID]
     });
+    devices[id] = device;
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(serviceUUID);
-    const characteristic = await service.getCharacteristic(charUUID);
+    const char = await service.getCharacteristic(charUUID);
 
-    await characteristic.startNotifications();
-    characteristic.addEventListener("characteristicvaluechanged", e => {
+    await char.startNotifications();
+    char.addEventListener("characteristicvaluechanged", e=>{
       const value = new TextDecoder().decode(e.target.value);
       const parts = value.split(',');
       if(parts.length>=3){
@@ -110,33 +130,49 @@ async function connect() {
         const ay = parseFloat(parts[1]);
         const az = parseFloat(parts[2]);
 
-        document.getElementById('values').textContent =
-          `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+        if(id===1){
+          latestRight = [ax,ay,az];
+          document.getElementById("values1").textContent = 
+            `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+        }else{
+          latestLeft = [ax,ay,az];
+          document.getElementById("values2").textContent = 
+            `X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+        }
 
-        // データ更新
-        xData.push(ax); if(xData.length>maxDataPoints) xData.shift();
-        yData.push(ay); if(yData.length>maxDataPoints) yData.shift();
-        zData.push(az); if(zData.length>maxDataPoints) zData.shift();
+        // グラフデータ更新
+        let d = dataStore[id];
+        d.x.push(ax); if(d.x.length>maxDataPoints) d.x.shift();
+        d.y.push(ay); if(d.y.length>maxDataPoints) d.y.shift();
+        d.z.push(az); if(d.z.length>maxDataPoints) d.z.shift();
 
-        // グラフ描画
-        drawGraphSmooth(ctxX, xData, '#ff5252');
-        drawGraphSmooth(ctxY, yData, '#00c853');
-        drawGraphSmooth(ctxZ, zData, '#2979ff');
+        // 描画
+        drawGraphSmooth(document.getElementById("graphX"+id).getContext("2d"), d.x, '#ff5252');
+        drawGraphSmooth(document.getElementById("graphY"+id).getContext("2d"), d.y, '#00c853');
+        drawGraphSmooth(document.getElementById("graphZ"+id).getContext("2d"), d.z, '#2979ff');
 
-        // Excel用データ保存
-        accelData.push([new Date().toLocaleTimeString(),ax,ay,az]);
-        if(accelData.length>1000) accelData.splice(1,1);
+        // Excel行作成
+        accelData.push([
+          new Date().toLocaleTimeString(),
+          latestRight[0], latestRight[1], latestRight[2],
+          latestLeft[0],  latestLeft[1],  latestLeft[2]
+        ]);
+        if(accelData.length>2000) accelData.splice(1,1);
       }
     });
-    document.getElementById('status').textContent = "✅ 接続成功";
-  } catch(err){
-    console.error(err);
-    document.getElementById('status').textContent = "❌ 接続失敗: "+err;
+
+    document.getElementById("status"+id).textContent = 
+      `✅ ${id===1?"右足":"左足"} 接続成功`;
+  }catch(err){
+    document.getElementById("status"+id).textContent = "❌ 接続失敗: "+err;
     btn.disabled = false;
   }
 }
 
+// グラフ描画（折れ線）
 function drawGraphSmooth(ctx, data, color){
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
   ctx.clearRect(0,0,width,height);
 
   // 背景
@@ -152,18 +188,24 @@ function drawGraphSmooth(ctx, data, color){
 
   if(data.length<2) return;
 
+  // スケーリング（動的）
+  let scale = 25;
+  let maxVal = Math.max(...data.map(v => Math.abs(v)));
+  if(maxVal > 0) scale = (height/2 - 10) / maxVal;
+
   // 線描画
   ctx.strokeStyle = color;
   ctx.beginPath();
   for(let i=0;i<data.length;i++){
     const x = (i/(maxDataPoints-1))*width;
-    const y = height/2 - data[i]*25;
+    const y = height/2 - data[i]*scale;
     if(i===0) ctx.moveTo(x,y);
     else ctx.lineTo(x,y);
   }
   ctx.stroke();
 }
 
+// Excel保存
 function downloadExcel(){
   let wb = XLSX.utils.book_new();
   let ws = XLSX.utils.aoa_to_sheet(accelData);
