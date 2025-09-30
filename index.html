@@ -4,25 +4,25 @@
 <meta charset="UTF-8">
 <title>M5Stick 両足加速度リアルタイム</title>
 <style>
-    body { font-family: Arial,sans-serif; background:#e0f7f1; color:#004d40; text-align:center; margin:0; padding:0; }
-    h1 { background:#a7ffeb; margin:0; padding:20px; box-shadow:0 4px 6px rgba(0,0,0,0.1); border-bottom-left-radius:20px; border-bottom-right-radius:20px;}
-    .controls { margin: 20px auto; } /* ボタン群をまとめる */
-    .graph-container { margin:20px auto; width:600px; }
-    canvas { border:2px solid #004d40; border-radius:10px; margin-top:10px; background:#b2dfdb; display:block; }
-    button { font-size:16px; padding:10px 20px; margin:10px; border:none; border-radius:10px; background:#26a69a; color:white; cursor:pointer; transition:0.2s; }
-    button:hover{background:#00796b;}
-    #status1,#status2{margin-top:10px;font-weight:bold;}
-    pre { font-size:18px; margin-top:10px; background:#b2dfdb; display:inline-block; padding:10px 20px; border-radius:10px; }
+    body { font-family: Arial,sans-serif; background:#e0f7f1; color:#004d40; text-align:center; margin:0; padding:0; }
+    h1 { background:#a7ffeb; margin:0; padding:20px; box-shadow:0 4px 6px rgba(0,0,0,0.1); border-bottom-left-radius:20px; border-bottom-right-radius:20px;}
+    .controls { margin: 20px auto; } 
+    .graph-container { margin:20px auto; width:600px; }
+    canvas { border:2px solid #004d40; border-radius:10px; margin-top:10px; background:#b2dfdb; display:block; }
+    button { font-size:16px; padding:10px 20px; margin:10px; border:none; border-radius:10px; background:#26a69a; color:white; cursor:pointer; transition:0.2s; }
+    button:hover{background:#00796b;}
+    #status1,#status2{margin-top:10px;font-weight:bold;}
+    pre { font-size:18px; margin-top:10px; background:#b2dfdb; display:inline-block; padding:10px 20px; border-radius:10px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<h1>M5Stick 両足加速度線グラフ + RTC</h1>
+<h1>M5Stick 両足加速度線グラフ (RTC同期機能はM5Stick側未実装のため非対応)</h1>
 
 <div class="controls">
-    <button id="connectBtn1" onclick="connectAndSync(1)">右足接続 & RTC同期</button>
-    <button id="connectBtn2" onclick="connectAndSync(2)">左足接続 & RTC同期</button>
-    <button onclick="downloadExcel()">Excelダウンロード</button>
+        <button id="connectBtn1" onclick="connectDevice(1)">右足接続</button>
+    <button id="connectBtn2" onclick="connectDevice(2)">左足接続</button>
+    <button onclick="downloadExcel()">Excelダウンロード</button>
 </div>
 
 <div id="status1">右足: 未接続</div>
@@ -31,195 +31,167 @@
 <pre id="values2">Time: N/A | X:0 Y:0 Z:0</pre>
 
 <div class="graph-container">
-    <h2>右足</h2>
-    <canvas id="graphX1" width="600" height="150"></canvas>
-    <canvas id="graphY1" width="600" height="150"></canvas>
-    <canvas id="graphZ1" width="600" height="150"></canvas>
+    <h2>右足</h2>
+    <canvas id="graphX1" width="600" height="150"></canvas>
+    <canvas id="graphY1" width="600" height="150"></canvas>
+    <canvas id="graphZ1" width="600" height="150"></canvas>
 </div>
 
 <div class="graph-container">
-    <h2>左足</h2>
-    <canvas id="graphX2" width="600" height="150"></canvas>
-    <canvas id="graphY2" width="600" height="150"></canvas>
-    <canvas id="graphZ2" width="600" height="150"></canvas>
+    <h2>左足</h2>
+    <canvas id="graphX2" width="600" height="150"></canvas>
+    <canvas id="graphY2" width="600" height="150"></canvas>
+    <canvas id="graphZ2" width="600" height="150"></canvas>
 </div>
 
 <script>
-const SERVICE_UUID    = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const CHAR_UUID_NOTIFY = "beb5483e-36e1-4688-b7f5-ea073f74076a"; // 通知用
-const CHAR_UUID_WRITE = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // 書き込み用 (RTC同期)
+const SERVICE_UUID     = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+// M5StickCのスケッチに合わせてUUIDを変更しました
+const CHAR_UUID_NOTIFY = "beb5483e-36e1-4688-b7f5-ea07361b26a8"; 
+// M5StickCのスケッチに未定義のため使用しません
+// const CHAR_UUID_WRITE = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; 
 
 let devices = {}; // 接続されたGATTサーバーを格納 (1:右, 2:左)
 let latestRight = [0,0,0];
-let latestLeft  = [0,0,0];
+let latestLeft  = [0,0,0];
+// Time, RX, RY, RZ, LX, LY, LZ
 let accelData = [["Time","RX","RY","RZ","LX","LY","LZ"]];
 let maxDataPoints = 300;
-let dataStore = {1:{x:[],y:[],z:[]},2:{x:[],y:[],z:[]}};
-const encoder = new TextEncoder();
+let dataStore = {1:{x:[],y:[],z:[]},2:{x:[],y:[]},z:[]};
 const decoder = new TextDecoder();
 
 
 // ----------------------------------------------------
-// 新しい接続と同期のトリガー関数
+// 接続トリガー関数
 // ----------------------------------------------------
-async function connectAndSync(id){
-    const btn = document.getElementById(`connectBtn${id}`);
-    btn.disabled = true; // ボタンを無効化
+async function connectDevice(id){
+    const btn = document.getElementById(`connectBtn${id}`);
+    btn.disabled = true; // ボタンを無効化
 
-    try {
-        // 1. デバイス接続
-        await connect(id); 
+    try {
+        await connect(id); 
+        document.getElementById("status"+id).textContent = `✅ ${id===1?"右足":"左足"} 接続成功`;
 
-        // 2. RTC同期 (接続が成功した場合のみ)
-        if (devices[id] && devices[id].connected) {
-            let now = new Date();
-            // YYYY-MM-DD HH:MM:SS 形式に変換
-            const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-            
-            await writeTimeToM5(id, timeStr);
-            document.getElementById("status"+id).textContent = `✅ ${id===1?"右足":"左足"} 接続 & RTC同期 成功`;
-        }
-
-    } catch(err) {
-        console.error("接続/同期エラー:", err);
-        document.getElementById("status"+id).textContent = `❌ ${id===1?"右足":"左足"} 接続失敗: ` + err.message;
-        btn.disabled = false; // 失敗したらボタンを有効化
-    }
-}
-
-
-// ----------------------------------------------------
-// RTC同期データをM5に書き込む
-// ----------------------------------------------------
-async function writeTimeToM5(id,timeStr){
-    const service = await devices[id].getPrimaryService(SERVICE_UUID);
-    const char = await service.getCharacteristic(CHAR_UUID_WRITE);
-    // writeValue() は現在推奨の書き込み方法
-    await char.writeValue(encoder.encode(timeStr)); 
-    console.log(`RTC同期送信 (${id===1?"右足":"左足"}): ${timeStr}`);
+    } catch(err) {
+        console.error("接続エラー:", err);
+        document.getElementById("status"+id).textContent = `❌ ${id===1?"右足":"左足"} 接続失敗: ` + err.message;
+        btn.disabled = false; // 失敗したらボタンを有効化
+    }
 }
 
 // ----------------------------------------------------
 // デバイス接続とデータ通知の受信開始
 // ----------------------------------------------------
 async function connect(id){
-    try {
-        // requestDevice()はユーザー操作直後に実行する必要がある
-        const device = await navigator.bluetooth.requestDevice({
-            // 接続したいデバイス名のみを表示する設定（あれば）
-            // filters:[{namePrefix: id===1 ? "M5StickC_Right" : "M5StickC_Left"}], 
-            
-            // フィルタなしでユーザーに選ばせる場合はこちら
-            acceptAllDevices:true,
-            
-            optionalServices:[SERVICE_UUID]
-        });
-        
-        // 接続
-        devices[id] = await device.gatt.connect();
-        const service = await devices[id].getPrimaryService(SERVICE_UUID);
-        
-        // 通知キャラクタリスティックの購読開始
-        const char = await service.getCharacteristic(CHAR_UUID_NOTIFY);
-        await char.startNotifications();
-        
-        char.addEventListener("characteristicvaluechanged", e=>{
-            // 受信データの解析
-            const value = decoder.decode(e.target.value);
-            const parts = value.split(',');
-            
-            if(parts.length===4){ // Time, AX, AY, AZ の4要素を期待
-                const ts = parts[0];
-                const ax = parseFloat(parts[1]);
-                const ay = parseFloat(parts[2]);
-                const az = parseFloat(parts[3]);
+    try {
+        const device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices:true,
+            optionalServices:[SERVICE_UUID]
+        });
+        
+        devices[id] = await device.gatt.connect();
+        const service = await devices[id].getPrimaryService(SERVICE_UUID);
+        
+        // 通知キャラクタリスティックの購読開始
+        const char = await service.getCharacteristic(CHAR_UUID_NOTIFY);
+        await char.startNotifications();
+        
+        char.addEventListener("characteristicvaluechanged", e=>{
+            // 受信データの解析
+            const value = decoder.decode(e.target.value);
+            const parts = value.split(',');
+            
+            // スケッチの送信形式: deviceName,時刻,X,Y,Z の5要素を期待
+            if(parts.length===5){ 
+                const ts = parts[1]; // 時刻
+                const ax = parseFloat(parts[2]);
+                const ay = parseFloat(parts[3]);
+                const az = parseFloat(parts[4]);
 
-                // データ格納
-                if(id===1){
-                    latestRight = [ax,ay,az];
-                    document.getElementById("values1").textContent = `Time:${ts} | X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
-                } else {
-                    latestLeft = [ax,ay,az];
-                    document.getElementById("values2").textContent = `Time:${ts} | X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
-                }
+                // データ格納と表示
+                if(id===1){
+                    latestRight = [ax,ay,az];
+                    document.getElementById("values1").textContent = `Time:${ts} | X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+                } else {
+                    latestLeft = [ax,ay,az];
+                    document.getElementById("values2").textContent = `Time:${ts} | X:${ax.toFixed(2)} Y:${ay.toFixed(2)} Z:${az.toFixed(2)}`;
+                }
 
-                // グラフデータ更新
-                let d = dataStore[id];
-                d.x.push(ax); if(d.x.length>maxDataPoints)d.x.shift();
-                d.y.push(ay); if(d.y.length>maxDataPoints)d.y.shift();
-                d.z.push(az); if(d.z.length>maxDataPoints)d.z.shift();
+                // グラフデータ更新
+                let d = dataStore[id];
+                d.x.push(ax); if(d.x.length>maxDataPoints)d.x.shift();
+                d.y.push(ay); if(d.y.length>maxDataPoints)d.y.shift();
+                d.z.push(az); if(d.z.length>maxDataPoints)d.z.shift();
 
-                // グラフ描画
-                drawGraphSmooth(document.getElementById("graphX"+id).getContext("2d"), d.x,'#ff5252');
-                drawGraphSmooth(document.getElementById("graphY"+id).getContext("2d"), d.y,'#00c853');
-                drawGraphSmooth(document.getElementById("graphZ"+id).getContext("2d"), d.z,'#2979ff');
-                
-                // Excel用データ格納（左右のデータが揃った行を記録）
-                accelData.push([ts, latestRight[0],latestRight[1],latestRight[2],
-                                    latestLeft[0],latestLeft[1],latestLeft[2]]);
-                // データが大きくなりすぎないように古いものを削除
-                if(accelData.length > 2000) accelData.splice(1,1);
-            }
-        });
-        
-        document.getElementById("status"+id).textContent = `✅ ${id===1?"右足":"左足"} デバイス接続済み... (RTC同期中)`;
-        
-    }catch(err){
-        // エラーを再スローし、connectAndSyncでcatchさせる
-        throw err; 
-    }
+                // グラフ描画
+                drawGraphSmooth(document.getElementById("graphX"+id).getContext("2d"), d.x,'#ff5252');
+                drawGraphSmooth(document.getElementById("graphY"+id).getContext("2d"), d.y,'#00c853');
+                drawGraphSmooth(document.getElementById("graphZ"+id).getContext("2d"), d.z,'#2979ff');
+                
+                // Excel用データ格納（左右のデータが揃った行を記録）
+                accelData.push([ts, latestRight[0],latestRight[1],latestRight[2],
+                                    latestLeft[0],latestLeft[1],latestLeft[2]]);
+                if(accelData.length > 2000) accelData.splice(1,1);
+            }
+        });
+        
+        document.getElementById("status"+id).textContent = `✅ ${id===1?"右足":"左足"} デバイス接続済み...`;
+        
+    }catch(err){
+        throw err; 
+    }
 }
 
 // ----------------------------------------------------
 // グラフ描画関数 (省略なし)
 // ----------------------------------------------------
 function drawGraphSmooth(ctx, data, color){
-    const width = ctx.canvas.width;
-    const height = ctx.canvas.height;
-    ctx.clearRect(0,0,width,height);
-    ctx.fillStyle="#b2dfdb";
-    ctx.fillRect(0,0,width,height);
-    ctx.strokeStyle="#004d40";
-    ctx.lineWidth = 1;
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
+    ctx.clearRect(0,0,width,height);
+    ctx.fillStyle="#b2dfdb";
+    ctx.fillRect(0,0,width,height);
+    ctx.strokeStyle="#004d40";
+    ctx.lineWidth = 1;
 
-    // ゼロライン描画
-    ctx.beginPath();
-    ctx.moveTo(0,height/2);
-    ctx.lineTo(width,height/2);
-    ctx.stroke();
-    
-    if(data.length<2) return;
-    
-    // データに合わせてスケールを決定 (±4Gを最大とすることが多い)
-    let maxVal=4.0; 
-    let scale=(maxVal>0)?(height/2-10)/maxVal:25;
-    
-    ctx.strokeStyle=color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
+    // ゼロライン描画
+    ctx.beginPath();
+    ctx.moveTo(0,height/2);
+    ctx.lineTo(width,height/2);
+    ctx.stroke();
+    
+    if(data.length<2) return;
+    
+    // データに合わせてスケールを決定 (±4Gを最大とすることが多い)
+    let maxVal=4.0; 
+    let scale=(maxVal>0)?(height/2-10)/maxVal:25;
+    
+    ctx.strokeStyle=color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
 
-    for(let i=0;i<data.length;i++){
-        const x=(i/(maxDataPoints-1))*width;
-        // データは -maxVal から +maxVal に収まるように変換
-        const y=height/2 - data[i]*scale;
-        
-        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
+    for(let i=0;i<data.length;i++){
+        const x=(i/(maxDataPoints-1))*width;
+        // データは -maxVal から +maxVal に収まるように変換
+        const y=height/2 - data[i]*scale;
+        
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
 }
 
 // ----------------------------------------------------
 // Excelダウンロード関数 (省略なし)
 // ----------------------------------------------------
 function downloadExcel(){
-    if (accelData.length <= 1) {
-        alert("データがありません。M5Stickに接続してから測定を開始してください。");
-        return;
-    }
-    let wb=XLSX.utils.book_new();
-    let ws=XLSX.utils.aoa_to_sheet(accelData);
-    XLSX.utils.book_append_sheet(wb, ws,"AccelData");
-    XLSX.writeFile(wb,"M5_dual_accel.xlsx");
+    if (accelData.length <= 1) {
+        alert("データがありません。M5Stickに接続してから測定を開始してください。");
+        return;
+    }
+    let wb=XLSX.utils.book_new();
+    let ws=XLSX.utils.aoa_to_sheet(accelData);
+    XLSX.utils.book_append_sheet(wb, ws,"AccelData");
+    XLSX.writeFile(wb,"M5_dual_accel.xlsx");
 }
 </script>
 </body>
