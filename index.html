@@ -2,108 +2,77 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5StickC 足組み判定（Pitch・Roll版）</title>
+  <title>M5StickC 足組み判定（Pitch・Roll 判定 + 組み方表示）</title>
   <style>
-    body {
-      font-family: 'Arial', sans-serif;
-      background-color: #e0f7f1;
-      color: #004d40;
-      text-align: center;
-      margin: 0;
-      padding: 0;
-    }
-    h1 {
-      background-color: #a7ffeb;
-      margin: 0;
-      padding: 20px 0;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      border-bottom-left-radius: 20px;
-      border-bottom-right-radius: 20px;
-    }
-    .graph-container {
-      margin: 20px auto;
-      width: 600px;
-    }
-    canvas {
-      border: 2px solid #004d40;
-      border-radius: 10px;
-      margin-top: 10px;
-      background-color: #b2dfdb;
-      display: block;
-    }
-    button {
-      font-size: 16px;
-      padding: 10px 20px;
-      margin: 10px;
-      border: none;
-      border-radius: 10px;
-      background-color: #26a69a;
-      color: white;
-      cursor: pointer;
-      transition: 0.2s;
-    }
-    button:hover { background-color: #00796b; }
-    #status1, #status2, #result {
-      margin-top: 10px;
-      font-weight: bold;
-      font-size: 18px;
-    }
-    #values1, #values2 {
-      font-size: 16px;
-      margin-top: 10px;
-      background-color: #b2dfdb;
-      display: inline-block;
-      padding: 10px 20px;
-      border-radius: 10px;
-    }
-    #result {
-      background-color: #fff59d;
-      color: #000;
-      padding: 10px 20px;
-      border-radius: 10px;
-      display: inline-block;
-      margin-top: 20px;
-    }
+    body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
+    h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
+    .controls { margin:12px 0; }
+    button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
+    #status1,#status2,#result,#styleLabel { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
+    pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
+    .graph-container{ margin:18px auto; width:640px; }
+    canvas{ border:2px solid #004d40; border-radius:10px; background:#e0f2f1; display:block; margin:8px auto; }
+    .infoRow{ display:flex; justify-content:center; gap:24px; margin-top:8px; flex-wrap:wrap;}
+    .infoBox{ background:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<h1>M5StickC 足組み判定システム（Pitch・Roll版）</h1>
+<h1>M5StickC 足組み判定（Pitch・Roll 判定 + 組み方表示）</h1>
 
-<button id="connectBtn1" onclick="connect(1)">右足 接続</button>
-<button id="connectBtn2" onclick="connect(2)">左足 接続</button>
-<button onclick="downloadExcel()">Excelダウンロード</button>
+<div class="controls">
+  <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
+  <button id="connectBtn2" onclick="connect(2)">左足 接続</button>
+  <button onclick="downloadExcel()">Excelダウンロード</button>
+</div>
 
 <div id="status1">右足: 未接続</div>
-<pre id="values1">Pitch:0 Roll:0</pre>
+<pre id="values1">Pitch:0.00 Roll:0.00</pre>
 
 <div id="status2">左足: 未接続</div>
-<pre id="values2">Pitch:0 Roll:0</pre>
+<pre id="values2">Pitch:0.00 Roll:0.00</pre>
 
 <div id="result">⚪ 足組み状態: 不明</div>
+<div id="styleLabel">組み方: —</div>
 
-<div class="graph-container">
-  <h2>右足 Pitch</h2>
-  <canvas id="graph1" width="600" height="150"></canvas>
+<div class="infoRow">
+  <div class="infoBox">閾値 Pitch(T_P): <span id="thP"></span>°</div>
+  <div class="infoBox">閾値 Roll(T_R): <span id="thR"></span>°</div>
 </div>
 
-<div class="graph-container">
-  <h2>左足 Pitch</h2>
-  <canvas id="graph2" width="600" height="150"></canvas>
-</div>
+<div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
+<div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></div>
 
 <script>
+/* ---------- ここにデータ由来の閾値・プロトタイプを埋め込みています ---------- */
+/* 閾値（データで算出した一次候補） */
+const THRESH_PITCH = 26.424008620689655;   // ≒ 26.42°
+const THRESH_ROLL  = 46.392060344827584;   // ≒ 46.39°
+
+/* 各組み方のプロトタイプ（ΔPitch, ΔRoll）の代表値（データ由来） */
+const PROTOTYPES = {
+  "15": {dp: 28.853166666666667, dr: 72.91516666666666},
+  "45": {dp: 31.464000000000003, dr: 55.65266666666666},
+  "90": {dp: 19.922333333333334, dr: 119.74116666666666}
+};
+
+/* UIに閾値表示 */
+document.addEventListener('DOMContentLoaded', ()=> {
+  document.getElementById('thP').textContent = THRESH_PITCH.toFixed(2);
+  document.getElementById('thR').textContent = THRESH_ROLL.toFixed(2);
+});
+
+/* Web Bluetooth 部分（right: id=1, left: id=2） */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
 let devices = {};
-let latestRight = [0, 0]; // [pitch, roll]
-let latestLeft  = [0, 0];
-let dataStore = { 1: [], 2: [] };
-let accelData = [["Time", "Right_Pitch", "Right_Roll", "Left_Pitch", "Left_Roll"]];
+let latestRight = [0,0]; // [pitch,roll]
+let latestLeft  = [0,0];
+let dataStore = {1:[], 2:[]};
 const maxDataPoints = 300;
+let accelData = [["Time","Right_Pitch","Right_Roll","Left_Pitch","Left_Roll"]];
 
-// BLE接続
 async function connect(id){
   const btn = document.getElementById("connectBtn"+id);
   btn.disabled = true;
@@ -118,98 +87,100 @@ async function connect(id){
     const char = await service.getCharacteristic(charUUID);
 
     await char.startNotifications();
-    char.addEventListener("characteristicvaluechanged", e => {
-      const value = new TextDecoder().decode(e.target.value);
+    char.addEventListener("characteristicvaluechanged", e=>{
+      const value = new TextDecoder().decode(e.target.value).trim();
       const parts = value.split(',');
-
       if(parts.length >= 2){
         const pitch = parseFloat(parts[0]);
         const roll  = parseFloat(parts[1]);
 
-        if(id === 1){
+        if(id===1){
           latestRight = [pitch, roll];
-          document.getElementById("values1").textContent = 
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          document.getElementById("values1").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          dataStore[1].push(pitch);
+          if(dataStore[1].length>maxDataPoints) dataStore[1].shift();
+          drawGraph(1);
         } else {
           latestLeft = [pitch, roll];
-          document.getElementById("values2").textContent = 
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          document.getElementById("values2").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          dataStore[2].push(pitch);
+          if(dataStore[2].length>maxDataPoints) dataStore[2].shift();
+          drawGraph(2);
         }
 
-        dataStore[id].push(pitch);
-        if(dataStore[id].length > maxDataPoints) dataStore[id].shift();
-        drawGraph(id);
-
-        accelData.push([
-          new Date().toLocaleTimeString(),
-          ...latestRight,
-          ...latestLeft
-        ]);
-
-        checkLegCrossed();
+        accelData.push([ new Date().toLocaleTimeString(), latestRight[0], latestRight[1], latestLeft[0], latestLeft[1] ]);
+        checkLegCrossed(); // 判定＋組み方表示
       }
     });
 
-    document.getElementById("status"+id).textContent = 
-      `✅ ${id === 1 ? "右足" : "左足"} 接続成功`;
+    document.getElementById("status"+id).textContent = `✅ ${id===1 ? "右足" : "左足"} 接続成功`;
   } catch(err){
     document.getElementById("status"+id).textContent = "❌ 接続失敗: " + err;
     btn.disabled = false;
   }
 }
 
-// 足組み判定
+/* 判定ロジック */
 function checkLegCrossed(){
-  let diffPitch = Math.abs(latestRight[0] - latestLeft[0]);
-  let diffRoll  = Math.abs(latestRight[1] - latestLeft[1]);
-  let isCrossed = (diffPitch > 20 || diffRoll > 20); // 閾値は調整可
+  const diffPitch = Math.abs(latestRight[0] - latestLeft[0]);
+  const diffRoll  = Math.abs(latestRight[1] - latestLeft[1]);
 
-  const result = document.getElementById("result");
-  if(isCrossed){
-    result.textContent = "⚠ 足を組んでいます";
-    result.style.backgroundColor = "#ffccbc";
-  } else {
-    result.textContent = "✅ 足を組んでいません";
-    result.style.backgroundColor = "#c8e6c9";
+  const resultEl = document.getElementById("result");
+  const styleEl  = document.getElementById("styleLabel");
+
+  // 組み判定（閾値いずれかを超えたら組みと判定）
+  const isCrossed = (diffPitch > THRESH_PITCH) || (diffRoll > THRESH_ROLL);
+
+  if(!isCrossed){
+    resultEl.textContent = "✅ 足を組んでいません";
+    resultEl.style.backgroundColor = "#c8e6c9";
+    styleEl.textContent = "組み方: —";
+    return;
   }
+
+  // 組んでいるので「どの組み方か」をプロトタイプと最短距離で判定
+  const vec = [diffPitch, diffRoll];
+  let bestLabel = null;
+  let bestDist = Infinity;
+  for(const label of Object.keys(PROTOTYPES)){
+    const proto = PROTOTYPES[label];
+    const dP = proto.dp, dR = proto.dr;
+    const dist = Math.hypot(vec[0]-dP, vec[1]-dR);
+    if(dist < bestDist){ bestDist = dist; bestLabel = label; }
+  }
+
+  resultEl.textContent = "⚠ 足を組んでいます";
+  resultEl.style.backgroundColor = "#ffccbc";
+  styleEl.textContent = `組み方: ${bestLabel}°（推定）`;
 }
 
-// グラフ描画
+/* グラフ描画（pitchのみ） */
 function drawGraph(id){
   const ctx = document.getElementById("graph"+id).getContext("2d");
   const data = dataStore[id];
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  ctx.clearRect(0, 0, width, height);
-
-  ctx.fillStyle = "#b2dfdb";
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.strokeStyle = "#004d40";
-  ctx.beginPath();
-  ctx.moveTo(0, height/2);
-  ctx.lineTo(width, height/2);
-  ctx.stroke();
-
+  const width = ctx.canvas.width; const height = ctx.canvas.height;
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle = "#e0f2f1"; ctx.fillRect(0,0,width,height);
+  ctx.strokeStyle = "#004d40"; ctx.beginPath(); ctx.moveTo(0,height/2); ctx.lineTo(width,height/2); ctx.stroke();
   if(data.length < 2) return;
-  let scale = 3; // スケール調整
-  ctx.strokeStyle = id === 1 ? "#ff5252" : "#2979ff";
-  ctx.beginPath();
-  for(let i = 0; i < data.length; i++){
-    const x = (i / (maxDataPoints - 1)) * width;
-    const y = height / 2 - data[i] * scale;
-    if(i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  // scale: map degrees to pixels (tune if needed)
+  let maxVal = Math.max(...data.map(v=>Math.abs(v)));
+  let scale = (height/2 - 8) / (maxVal || 1);
+  ctx.strokeStyle = id===1 ? "#ff5252" : "#2979ff"; ctx.beginPath();
+  for(let i=0;i<data.length;i++){
+    const x = (i/(maxDataPoints-1))*width;
+    const y = height/2 - data[i]*scale;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
 }
 
-// Excel出力
+/* Excel出力 */
 function downloadExcel(){
-  let wb = XLSX.utils.book_new();
-  let ws = XLSX.utils.aoa_to_sheet(accelData);
-  XLSX.utils.book_append_sheet(wb, ws, "AccelData");
-  XLSX.writeFile(wb, "accel_pitch_roll.xlsx");
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(accelData);
+  XLSX.utils.book_append_sheet(wb, ws, "PitchRoll");
+  XLSX.writeFile(wb, "accel_pitch_roll_with_timestamps.xlsx");
 }
 </script>
 </body>
