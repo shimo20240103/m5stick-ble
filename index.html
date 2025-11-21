@@ -2,27 +2,28 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5StickC 足組み判定（Pitch・Roll 判定 + 組み方表示）</title>
+  <title>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション）</title>
   <style>
     body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
     h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
     .controls { margin:12px 0; }
     button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
-    #status1,#status2,#result,#styleLabel { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
+    #status1,#status2,#result,#styleLabel,#calibStatus { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
     pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
-    .graph-container{ margin:18px auto; width:640px; }
-    canvas{ border:2px solid #004d40; border-radius:10px; background:#e0f2f1; display:block; margin:8px auto; }
     .infoRow{ display:flex; justify-content:center; gap:24px; margin-top:8px; flex-wrap:wrap;}
     .infoBox{ background:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
+    canvas{ border:2px solid #004d40; border-radius:10px; background:#e0f2f1; display:block; margin:8px auto; }
+    .graph-container{ margin:18px auto; width:640px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<h1>M5StickC 足組み判定（Pitch・Roll 判定 + 組み方表示）</h1>
+<h1>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション）</h1>
 
 <div class="controls">
   <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
   <button id="connectBtn2" onclick="connect(2)">左足 接続</button>
+  <button onclick="startCalibration()">初期値キャリブレーション</button>
   <button onclick="downloadExcel()">Excelダウンロード</button>
 </div>
 
@@ -32,55 +33,66 @@
 <div id="status2">左足: 未接続</div>
 <pre id="values2">Pitch:0.00 Roll:0.00</pre>
 
+<div id="calibStatus">初期値: 未キャリブレーション</div>
+
 <div id="result">⚪ 足組み状態: 不明</div>
 <div id="styleLabel">組み方: —</div>
 
 <div class="infoRow">
   <div class="infoBox">閾値 Pitch(T_P): <span id="thP"></span>°</div>
-  <div class="infoBox">閾値 Roll(T_R): <span id="thR"></span>°</div>
+  <div class="infoBox">閾値 Roll(T_R):  <span id="thR"></span>°</div>
 </div>
 
 <div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
-<div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></div>
+<div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></canvas></div>
 
 <script>
-/* ---------- ここにデータ由来の閾値・プロトタイプを埋め込みています ---------- */
-/* 閾値（データで算出した一次候補） */
-const THRESH_PITCH = 26.424008620689655;   // ≒ 26.42°
-const THRESH_ROLL  = 46.392060344827584;   // ≒ 46.39°
+/* ---------- 固定の閾値 ---------- */
+const THRESH_PITCH = 26.42;
+const THRESH_ROLL  = 46.39;
 
-/* 各組み方のプロトタイプ（ΔPitch, ΔRoll）の代表値（データ由来） */
+/* プロトタイプ（ΔPitch, ΔRoll） */
 const PROTOTYPES = {
-  "15": {dp: 28.853166666666667, dr: 72.91516666666666},
-  "45": {dp: 31.464000000000003, dr: 55.65266666666666},
-  "90": {dp: 19.922333333333334, dr: 119.74116666666666}
+  "15": {dp: 28.85, dr: 72.91},
+  "45": {dp: 31.46, dr: 55.65},
+  "90": {dp: 19.92, dr:119.74}
 };
 
-/* UIに閾値表示 */
-document.addEventListener('DOMContentLoaded', ()=> {
-  document.getElementById('thP').textContent = THRESH_PITCH.toFixed(2);
-  document.getElementById('thR').textContent = THRESH_ROLL.toFixed(2);
+/* UI 表示 */
+document.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("thP").textContent = THRESH_PITCH.toFixed(2);
+  document.getElementById("thR").textContent = THRESH_ROLL.toFixed(2);
 });
 
-/* Web Bluetooth 部分（right: id=1, left: id=2） */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
 let devices = {};
-let latestRight = [0,0]; // [pitch,roll]
+let latestRight = [0,0];
 let latestLeft  = [0,0];
-let dataStore = {1:[], 2:[]};
-const maxDataPoints = 300;
 let accelData = [["Time","Right_Pitch","Right_Roll","Left_Pitch","Left_Roll"]];
+let dataStore = {1:[],2:[]};
+const maxDataPoints = 300;
 
+/* ---------- キャリブレーション用 ---------- */
+let calibRight = {pitch:0, roll:0};
+let calibLeft  = {pitch:0, roll:0};
+let isCalibrated = false;
+
+let tempRight = [];
+let tempLeft  = [];
+
+/* BT 接続 */
 async function connect(id){
   const btn = document.getElementById("connectBtn"+id);
   btn.disabled = true;
-  try {
+
+  try{
     const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [serviceUUID]
+      acceptAllDevices:true,
+      optionalServices:[serviceUUID]
     });
+
     devices[id] = device;
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(serviceUUID);
@@ -88,94 +100,164 @@ async function connect(id){
 
     await char.startNotifications();
     char.addEventListener("characteristicvaluechanged", e=>{
-      const value = new TextDecoder().decode(e.target.value).trim();
-      const parts = value.split(',');
+      const text = new TextDecoder().decode(e.target.value).trim();
+      const parts = text.split(",");
+
       if(parts.length >= 2){
         const pitch = parseFloat(parts[0]);
         const roll  = parseFloat(parts[1]);
 
-        if(id===1){
+        if(id === 1){
           latestRight = [pitch, roll];
-          document.getElementById("values1").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          document.getElementById("values1").textContent =
+            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
           dataStore[1].push(pitch);
-          if(dataStore[1].length>maxDataPoints) dataStore[1].shift();
+          if(dataStore[1].length > maxDataPoints) dataStore[1].shift();
           drawGraph(1);
         } else {
           latestLeft = [pitch, roll];
-          document.getElementById("values2").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
+          document.getElementById("values2").textContent =
+            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
           dataStore[2].push(pitch);
-          if(dataStore[2].length>maxDataPoints) dataStore[2].shift();
+          if(dataStore[2].length > maxDataPoints) dataStore[2].shift();
           drawGraph(2);
         }
 
-        accelData.push([ new Date().toLocaleTimeString(), latestRight[0], latestRight[1], latestLeft[0], latestLeft[1] ]);
-        checkLegCrossed(); // 判定＋組み方表示
+        accelData.push([
+          new Date().toLocaleTimeString(),
+          latestRight[0], latestRight[1],
+          latestLeft[0], latestLeft[1]
+        ]);
+
+        checkLegCrossed();
       }
     });
 
-    document.getElementById("status"+id).textContent = `✅ ${id===1 ? "右足" : "左足"} 接続成功`;
-  } catch(err){
+    document.getElementById("status"+id).textContent =
+      `✅ ${id===1 ? "右足" : "左足"} 接続成功`;
+  }
+  catch(err){
     document.getElementById("status"+id).textContent = "❌ 接続失敗: " + err;
     btn.disabled = false;
   }
 }
 
-/* 判定ロジック */
+/* ---------- キャリブレーション開始 ---------- */
+function startCalibration(){
+  tempRight = [];
+  tempLeft  = [];
+  isCalibrated = false;
+
+  let sec = 10;
+  document.getElementById("calibStatus").textContent =
+    `キャリブレーション開始… ${sec}秒`;
+
+  let timer = setInterval(()=>{
+    sec--;
+
+    /* 現在値を一時バッファに保存 */
+    tempRight.push([...latestRight]);
+    tempLeft.push([...latestLeft]);
+
+    document.getElementById("calibStatus").textContent =
+      `キャリブレーション中… ${sec}秒`;
+
+    if(sec <= 0){
+      clearInterval(timer);
+
+      /* 平均を計算 */
+      calibRight.pitch = avg(tempRight.map(v=>v[0]));
+      calibRight.roll  = avg(tempRight.map(v=>v[1]));
+
+      calibLeft.pitch  = avg(tempLeft.map(v=>v[0]));
+      calibLeft.roll   = avg(tempLeft.map(v=>v[1]));
+
+      isCalibrated = true;
+
+      document.getElementById("calibStatus").textContent =
+        `初期値設定完了：右(P:${calibRight.pitch.toFixed(1)},R:${calibRight.roll.toFixed(1)}) / 左(P:${calibLeft.pitch.toFixed(1)},R:${calibLeft.roll.toFixed(1)})`;
+    }
+  }, 1000);
+}
+
+function avg(arr){ return arr.reduce((a,b)=>a+b,0) / arr.length; }
+
+/* ---------- 判定ロジック ---------- */
 function checkLegCrossed(){
-  const diffPitch = Math.abs(latestRight[0] - latestLeft[0]);
-  const diffRoll  = Math.abs(latestRight[1] - latestLeft[1]);
+  if(!isCalibrated){
+    document.getElementById("result").textContent = "⚠ キャリブレーション未実施";
+    return;
+  }
+
+  /* キャリブレーション補正後の値 */
+  const rightP = latestRight[0] - calibRight.pitch;
+  const rightR = latestRight[1] - calibRight.roll;
+
+  const leftP  = latestLeft[0]  - calibLeft.pitch;
+  const leftR  = latestLeft[1]  - calibLeft.roll;
+
+  const diffPitch = Math.abs(rightP - leftP);
+  const diffRoll  = Math.abs(rightR - leftR);
 
   const resultEl = document.getElementById("result");
   const styleEl  = document.getElementById("styleLabel");
 
-  // 組み判定（閾値いずれかを超えたら組みと判定）
   const isCrossed = (diffPitch > THRESH_PITCH) || (diffRoll > THRESH_ROLL);
 
   if(!isCrossed){
     resultEl.textContent = "✅ 足を組んでいません";
-    resultEl.style.backgroundColor = "#c8e6c9";
+    resultEl.style.background = "#c8e6c9";
     styleEl.textContent = "組み方: —";
     return;
   }
 
-  // 組んでいるので「どの組み方か」をプロトタイプと最短距離で判定
+  /* 最も近いプロトタイプを選ぶ */
   const vec = [diffPitch, diffRoll];
-  let bestLabel = null;
-  let bestDist = Infinity;
-  for(const label of Object.keys(PROTOTYPES)){
-    const proto = PROTOTYPES[label];
-    const dP = proto.dp, dR = proto.dr;
-    const dist = Math.hypot(vec[0]-dP, vec[1]-dR);
-    if(dist < bestDist){ bestDist = dist; bestLabel = label; }
+  let best = null, bestDist = Infinity;
+  for(const label in PROTOTYPES){
+    const dp = PROTOTYPES[label].dp;
+    const dr = PROTOTYPES[label].dr;
+    const dist = Math.hypot(vec[0]-dp, vec[1]-dr);
+    if(dist < bestDist){ bestDist = dist; best = label; }
   }
 
   resultEl.textContent = "⚠ 足を組んでいます";
-  resultEl.style.backgroundColor = "#ffccbc";
-  styleEl.textContent = `組み方: ${bestLabel}°（推定）`;
+  resultEl.style.background = "#ffccbc";
+  styleEl.textContent = `組み方: ${best}°（推定）`;
 }
 
-/* グラフ描画（pitchのみ） */
+/* ---------- グラフ描画（Pitchのみ） ---------- */
 function drawGraph(id){
   const ctx = document.getElementById("graph"+id).getContext("2d");
   const data = dataStore[id];
-  const width = ctx.canvas.width; const height = ctx.canvas.height;
-  ctx.clearRect(0,0,width,height);
-  ctx.fillStyle = "#e0f2f1"; ctx.fillRect(0,0,width,height);
-  ctx.strokeStyle = "#004d40"; ctx.beginPath(); ctx.moveTo(0,height/2); ctx.lineTo(width,height/2); ctx.stroke();
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#e0f2f1";
+  ctx.fillRect(0,0,w,h);
+
+  ctx.strokeStyle="#004d40";
+  ctx.beginPath();
+  ctx.moveTo(0,h/2);
+  ctx.lineTo(w,h/2);
+  ctx.stroke();
+
   if(data.length < 2) return;
-  // scale: map degrees to pixels (tune if needed)
+
   let maxVal = Math.max(...data.map(v=>Math.abs(v)));
-  let scale = (height/2 - 8) / (maxVal || 1);
-  ctx.strokeStyle = id===1 ? "#ff5252" : "#2979ff"; ctx.beginPath();
-  for(let i=0;i<data.length;i++){
-    const x = (i/(maxDataPoints-1))*width;
-    const y = height/2 - data[i]*scale;
+  let scale = (h/2 - 8) / (maxVal || 1);
+
+  ctx.strokeStyle = id===1 ? "#ff5252" : "#2979ff";
+  ctx.beginPath();
+  data.forEach((v,i)=>{
+    const x = (i/(maxDataPoints-1))*w;
+    const y = h/2 - v*scale;
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
+  });
   ctx.stroke();
 }
 
-/* Excel出力 */
+/* ---------- Excel出力 ---------- */
 function downloadExcel(){
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(accelData);
