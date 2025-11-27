@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>足組み判定（キャリブレーション対応 + CSV）</title>
+<title>足組み判定（キャリブレーション + AngleLevel + CSV）</title>
 <style>
     body { font-family: Arial; background: #f4f4f4; padding: 20px; }
     #status { font-size: 24px; margin-top: 20px; }
@@ -13,7 +13,7 @@
 
 <body>
 
-<h1>足組み判定（キャリブレーション + CSV出力）</h1>
+<h1>足組み判定（キャリブレーション + AngleLevel + CSV出力）</h1>
 
 <button onclick="connectBLE()">M5 と接続</button>
 <button onclick="startCalibration()">キャリブレーション開始（10秒）</button>
@@ -34,11 +34,9 @@
 
 <script>
 
-// ===== BLE 接続準備 ====================================================
+// ===== BLE 接続 ========================================================
 
-let device;
-let server;
-let characteristic;
+let device, server, characteristic;
 
 // 最新センサー値
 let latestRight = { pitch: 0, roll: 0 };
@@ -52,13 +50,13 @@ let calibrating = false;
 let calDataRight = [];
 let calDataLeft = [];
 
-// CSVログ
+// CSV データ保持
 let csvLogs = [
-    ["timestamp", "pattern", "angleLevel"]
+    ["Time", "Right_Pitch", "Right_Roll", "Left_Pitch", "Left_Roll", "Right_AngleLevel", "Left_AngleLevel"]
 ];
 
 
-// ===== BLE 接続 ========================================================
+// ===== BLE 接続処理 ====================================================
 
 async function connectBLE() {
     try {
@@ -80,18 +78,14 @@ async function connectBLE() {
 }
 
 
-// ===== BLE 受信処理 ====================================================
+// ===== BLE データ受信 ==================================================
 
 function handleNotify(event) {
     const text = new TextDecoder().decode(event.target.value);
     const obj = JSON.parse(text);
 
-    // M5 から送られてくる例：
-    // { "right": {pitch:13, roll:2}, "left": {pitch:-10, roll:-2} }
-
     latestRight.pitch = obj.right.pitch;
     latestRight.roll  = obj.right.roll;
-
     latestLeft.pitch  = obj.left.pitch;
     latestLeft.roll   = obj.left.roll;
 
@@ -113,7 +107,7 @@ function startCalibration() {
     calDataRight = [];
     calDataLeft = [];
 
-    document.getElementById("status").innerText = "キャリブレーション中... (10秒)";
+    document.getElementById("status").innerText = "キャリブレーション中...(10秒)";
 
     setTimeout(() => {
         calibrating = false;
@@ -138,7 +132,7 @@ function average(arr) {
 
 
 
-// ===== 角度分類ロジック ===============================================
+// ===== AngleLevel 判定 ================================================
 
 function classifyAngleLevel(pitchDiff, rollDiff) {
     if (pitchDiff <= -70 && rollDiff <= -95) return 90;
@@ -147,60 +141,53 @@ function classifyAngleLevel(pitchDiff, rollDiff) {
     return 0;
 }
 
-function logCrossEvent(pattern, pitchDiff, rollDiff) {
-    const angleLevel = classifyAngleLevel(pitchDiff, rollDiff);
-    const timestamp = new Date().toLocaleString();
-    csvLogs.push([timestamp, pattern, angleLevel]);
-}
 
 
-// ===== 足組み判定（B方式：初期値からの絶対差）===========================
+// ===== 足組み判定＋CSV ログ ===========================================
 
 function detectCrossLeg() {
 
-    // 差分（右足）
+    // 差分を計算
     const rPitchDiff = latestRight.pitch - calibRight.pitch;
     const rRollDiff  = latestRight.roll  - calibRight.roll;
+    const lPitchDiff = latestLeft.pitch  - calibLeft.pitch;
+    const lRollDiff  = latestLeft.roll   - calibLeft.roll;
 
-    // 差分（左足）
-    const lPitchDiff = latestLeft.pitch - calibLeft.pitch;
-    const lRollDiff  = latestLeft.roll  - calibLeft.roll;
+    // angleLevel（右・左）
+    const rightLevel = classifyAngleLevel(rPitchDiff, rRollDiff);
+    const leftLevel  = classifyAngleLevel(lPitchDiff, lRollDiff);
 
-    // 右90°
-    if (rPitchDiff <= -70 && rRollDiff <= -95) {
-        logCrossEvent("右足・90度組み", rPitchDiff, rRollDiff);
-        document.getElementById("status").innerText = "右足の90度組み";
-        return;
+    // CSVに常時記録
+    const timestamp = new Date().toLocaleString();
+    csvLogs.push([
+        timestamp,
+        latestRight.pitch,
+        latestRight.roll,
+        latestLeft.pitch,
+        latestLeft.roll,
+        rightLevel,
+        leftLevel
+    ]);
+
+    // UI 表示
+    if (rightLevel === 90) {
+        document.getElementById("status").innerText = "右足 90度組み";
+    } else if (leftLevel === 90) {
+        document.getElementById("status").innerText = "左足 90度組み";
+    } else if (rightLevel === 45) {
+        document.getElementById("status").innerText = "右足 45度組み";
+    } else if (leftLevel === 45) {
+        document.getElementById("status").innerText = "左足 45度組み";
+    } else if (rightLevel === 15 || leftLevel === 15) {
+        document.getElementById("status").innerText = "ゆるく足を組んでいる(15°)";
+    } else {
+        document.getElementById("status").innerText = "組んでいない";
     }
-
-    // 左90°
-    if (lPitchDiff <= -70 && lRollDiff <= -95) {
-        logCrossEvent("左足・90度組み", lPitchDiff, lRollDiff);
-        document.getElementById("status").innerText = "左足の90度組み";
-        return;
-    }
-
-    // 右45°
-    if (rPitchDiff <= -25 && rRollDiff <= -20) {
-        logCrossEvent("右足・45度組み", rPitchDiff, rRollDiff);
-        document.getElementById("status").innerText = "右足の45度組み";
-        return;
-    }
-
-    // 左45°
-    if (lPitchDiff <= -25 && lRollDiff <= -20) {
-        logCrossEvent("左足・45度組み", lPitchDiff, lRollDiff);
-        document.getElementById("status").innerText = "左足の45度組み";
-        return;
-    }
-
-    // 組んでいない
-    document.getElementById("status").innerText = "組んでいない";
 }
 
 
 
-// ===== CSV 出力 ========================================================
+// ===== CSV ダウンロード ================================================
 
 function downloadCSV() {
     const csvContent = csvLogs.map(row => row.join(",")).join("\n");
@@ -209,7 +196,7 @@ function downloadCSV() {
 
     const a = document.createElement("a");
     a.href = url;
-    a.download = "leg_cross_log.csv";
+    a.download = "leg_data.csv";
     a.click();
 
     URL.revokeObjectURL(url);
