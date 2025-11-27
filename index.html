@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション + angleLevel記録）</title>
+  <title>M5StickC 足組み判定（合成値ベース）</title>
   <style>
     body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
     h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
@@ -18,7 +18,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<h1>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション）</h1>
+<h1>M5StickC 足組み判定（合成値ベース）</h1>
 
 <div class="controls">
   <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
@@ -28,40 +28,27 @@
 </div>
 
 <div id="status1">右足: 未接続</div>
-<pre id="values1">Pitch:0.00 Roll:0.00</pre>
+<pre id="values1">Mag:0.00</pre>
 
 <div id="status2">左足: 未接続</div>
-<pre id="values2">Pitch:0.00 Roll:0.00</pre>
+<pre id="values2">Mag:0.00</pre>
 
 <div id="calibStatus">初期値: 未キャリブレーション</div>
 
 <div id="result">⚪ 足組み状態: 不明</div>
 <div id="styleLabel">組み方: —</div>
 
-<div class="infoRow">
-  <div class="infoBox">閾値 Pitch(T_P): <span id="thP"></span>°</div>
-  <div class="infoBox">閾値 Roll(T_R):  <span id="thR"></span>°</span></div>
-</div>
-
-<div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
-<div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></div>
+<div class="graph-container"><h2>右足 合成値</h2><canvas id="graph1" width="640" height="140"></canvas></div>
+<div class="graph-container"><h2>左足 合成値</h2><canvas id="graph2" width="640" height="140"></canvas></div>
 
 <script>
 /* ---------- 固定の閾値 ---------- */
-const THRESH_PITCH = 26.42;
-const THRESH_ROLL  = 46.39;
+const THRESH_MAG = 50; // 合成値差の閾値（適宜調整可）
 
-/* プロトタイプ（ΔPitch, ΔRoll） */
-const PROTOTYPES = {
-  "15": {dp: 28.85, dr: 72.91},
-  "45": {dp: 31.46, dr: 55.65},
-  "90": {dp: 19.92, dr:119.74}
-};
+/* プロトタイプ（差分Magベース） */
+const PROTOTYPES = { "15":50, "45":80, "90":120 }; 
 
-document.addEventListener("DOMContentLoaded", ()=>{
-  document.getElementById("thP").textContent = THRESH_PITCH.toFixed(2);
-  document.getElementById("thR").textContent = THRESH_ROLL.toFixed(2);
-});
+document.addEventListener("DOMContentLoaded", ()=>{});
 
 /* BLE 定義 */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -72,8 +59,7 @@ let latestRight = [0,0];
 let latestLeft  = [0,0];
 
 /* Excel用データ */
-let accelData = [["Time","Right_Pitch","Right_Roll","Left_Pitch","Left_Roll","angleLevel"]];
-
+let accelData = [["Time","Right_Mag","Left_Mag"]];
 let dataStore = {1:[],2:[]};
 const maxDataPoints = 300;
 
@@ -81,7 +67,6 @@ const maxDataPoints = 300;
 let calibRight = {pitch:0, roll:0};
 let calibLeft  = {pitch:0, roll:0};
 let isCalibrated = false;
-
 let tempRight = [];
 let tempLeft  = [];
 
@@ -109,30 +94,29 @@ async function connect(id){
       if(parts.length >= 2){
         const pitch = parseFloat(parts[0]);
         const roll  = parseFloat(parts[1]);
+        const mag   = Math.hypot(pitch, roll); // 合成値
 
         if(id === 1){
           latestRight = [pitch, roll];
-          document.getElementById("values1").textContent =
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
-          dataStore[1].push(pitch);
+          document.getElementById("values1").textContent = `Mag:${mag.toFixed(2)}`;
+          dataStore[1].push(mag);
           if(dataStore[1].length > maxDataPoints) dataStore[1].shift();
           drawGraph(1);
         } else {
           latestLeft = [pitch, roll];
-          document.getElementById("values2").textContent =
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
-          dataStore[2].push(pitch);
+          document.getElementById("values2").textContent = `Mag:${mag.toFixed(2)}`;
+          dataStore[2].push(mag);
           if(dataStore[2].length > maxDataPoints) dataStore[2].shift();
           drawGraph(2);
         }
 
-        /* Excelへ angleLevel 追加 */
-        const angle = computeAngleLevel();
+        // Excel用データ
+        const rightMag = Math.hypot(latestRight[0], latestRight[1]);
+        const leftMag  = Math.hypot(latestLeft[0], latestLeft[1]);
         accelData.push([
           new Date().toLocaleTimeString(),
-          latestRight[0], latestRight[1],
-          latestLeft[0], latestLeft[1],
-          angle
+          rightMag.toFixed(2),
+          leftMag.toFixed(2)
         ]);
 
         checkLegCrossed();
@@ -148,7 +132,6 @@ async function connect(id){
   }
 }
 
-
 /* ---------- キャリブレーション ---------- */
 function startCalibration(){
   tempRight = [];
@@ -161,22 +144,17 @@ function startCalibration(){
 
   let timer = setInterval(()=>{
     sec--;
-
     tempRight.push([...latestRight]);
     tempLeft.push([...latestLeft]);
-
     document.getElementById("calibStatus").textContent =
       `キャリブレーション中… ${sec}秒`;
 
     if(sec <= 0){
       clearInterval(timer);
-
       calibRight.pitch = avg(tempRight.map(v=>v[0]));
       calibRight.roll  = avg(tempRight.map(v=>v[1]));
-
       calibLeft.pitch  = avg(tempLeft.map(v=>v[0]));
       calibLeft.roll   = avg(tempLeft.map(v=>v[1]));
-
       isCalibrated = true;
 
       document.getElementById("calibStatus").textContent =
@@ -187,37 +165,25 @@ function startCalibration(){
 
 function avg(arr){ return arr.reduce((a,b)=>a+b,0) / arr.length; }
 
-/* ---------- angleLevel 計算（左右差で推定） ---------- */
+/* ---------- 足組み判定（合成値差） ---------- */
 function computeAngleLevel(){
   if(!isCalibrated) return 0;
 
-  const rightP = latestRight[0] - calibRight.pitch;
-  const rightR = latestRight[1] - calibRight.roll;
+  const rightMag = Math.hypot(latestRight[0] - calibRight.pitch, latestRight[1] - calibRight.roll);
+  const leftMag  = Math.hypot(latestLeft[0]  - calibLeft.pitch,  latestLeft[1]  - calibLeft.roll);
 
-  const leftP  = latestLeft[0]  - calibLeft.pitch;
-  const leftR  = latestLeft[1]  - calibLeft.roll;
+  const diffMag = Math.abs(rightMag - leftMag);
+  if(diffMag < THRESH_MAG) return 0;
 
-  const diffPitch = Math.abs(rightP - leftP);
-  const diffRoll  = Math.abs(rightR - leftR);
-
-  const crossed = (diffPitch > THRESH_PITCH) || (diffRoll > THRESH_ROLL);
-  if(!crossed) return 0;
-
-  /* プロトタイプ比較 */
-  const vec = [diffPitch, diffRoll];
+  // プロトタイプ比較（簡易版）
   let best = null, bestDist = Infinity;
-
   for(const label in PROTOTYPES){
-    const dp = PROTOTYPES[label].dp;
-    const dr = PROTOTYPES[label].dr;
-    const dist = Math.hypot(vec[0]-dp, vec[1]-dr);
+    const dist = Math.abs(diffMag - PROTOTYPES[label]);
     if(dist < bestDist){ bestDist = dist; best = label; }
   }
   return parseInt(best);
 }
 
-
-/* ---------- 足組み判定 ---------- */
 function checkLegCrossed(){
   if(!isCalibrated){
     document.getElementById("result").textContent = "⚠ キャリブレーション未実施";
@@ -238,7 +204,6 @@ function checkLegCrossed(){
     styleEl.textContent = `組み方: ${angle}°（推定）`;
   }
 }
-
 
 /* ---------- グラフ描画 ---------- */
 function drawGraph(id){
@@ -271,13 +236,12 @@ function drawGraph(id){
   ctx.stroke();
 }
 
-
 /* ---------- Excel 出力 ---------- */
 function downloadExcel(){
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(accelData);
-  XLSX.utils.book_append_sheet(wb, ws, "PitchRoll");
-  XLSX.writeFile(wb, "accel_pitch_roll_angleLevel.xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, "MagData");
+  XLSX.writeFile(wb, "accel_mag.xlsx");
 }
 </script>
 </body>
