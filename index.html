@@ -1,284 +1,220 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション）</title>
-  <style>
-    body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
-    h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
-    .controls { margin:12px 0; }
-    button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
-    #status1,#status2,#result,#styleLabel,#calibStatus { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
-    pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
-    .infoRow{ display:flex; justify-content:center; gap:24px; margin-top:8px; flex-wrap:wrap;}
-    .infoBox{ background:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
-    canvas{ border:2px solid #004d40; border-radius:10px; background:#e0f2f1; display:block; margin:8px auto; }
-    .graph-container{ margin:18px auto; width:640px; }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<meta charset="UTF-8">
+<title>足組み判定（キャリブレーション対応 + CSV）</title>
+<style>
+    body { font-family: Arial; background: #f4f4f4; padding: 20px; }
+    #status { font-size: 24px; margin-top: 20px; }
+    button { padding: 10px 20px; margin: 10px 0; font-size: 16px; }
+    .box { background:white; padding:20px; margin-top:20px; border-radius:8px; }
+</style>
 </head>
+
 <body>
-<h1>M5StickC 足組み判定（Pitch/Roll + 組み方推定 + キャリブレーション）</h1>
 
-<div class="controls">
-  <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
-  <button id="connectBtn2" onclick="connect(2)">左足 接続</button>
-  <button onclick="startCalibration()">初期値キャリブレーション</button>
-  <button onclick="downloadExcel()">Excelダウンロード</button>
+<h1>足組み判定（キャリブレーション + CSV出力）</h1>
+
+<button onclick="connectBLE()">M5 と接続</button>
+<button onclick="startCalibration()">キャリブレーション開始（10秒）</button>
+<button onclick="downloadCSV()">CSV ダウンロード</button>
+
+<div class="box">
+    <h2>キャリブレーション値</h2>
+    <div>右足 Pitch: <span id="calRightPitch">--</span></div>
+    <div>右足 Roll : <span id="calRightRoll">--</span></div>
+    <div>左足 Pitch: <span id="calLeftPitch">--</span></div>
+    <div>左足 Roll : <span id="calLeftRoll">--</span></div>
 </div>
 
-<div id="status1">右足: 未接続</div>
-<pre id="values1">Pitch:0.00 Roll:0.00</pre>
-
-<div id="status2">左足: 未接続</div>
-<pre id="values2">Pitch:0.00 Roll:0.00</pre>
-
-<div id="calibStatus">初期値: 未キャリブレーション</div>
-
-<div id="result">⚪ 足組み状態: 不明</div>
-<div id="styleLabel">組み方: —</div>
-
-<div class="infoRow">
-  <div class="infoBox">閾値 Pitch(T_P): <span id="thP"></span>°</div>
-  <div class="infoBox">閾値 Roll(T_R):  <span id="thR"></span>°</div>
+<div class="box">
+    <h2>現在の姿勢判定</h2>
+    <div id="status">--</div>
 </div>
 
-<div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
-<div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></canvas></div>
 <script>
-/* ---------- 固定の閾値 ---------- */
-const THRESH_PITCH = 26.42;
-const THRESH_ROLL  = 46.39;
 
-/* プロトタイプ（ΔPitch, ΔRoll） */
-const PROTOTYPES = {
-  "15": {dp: 28.85, dr: 72.91},
-  "45": {dp: 31.46, dr: 55.65},
-  "90": {dp: 19.92, dr:119.74}
-};
+// ===== BLE 接続準備 ====================================================
 
-/* UI 表示 */
-document.addEventListener("DOMContentLoaded", ()=>{
-  document.getElementById("thP").textContent = THRESH_PITCH.toFixed(2);
-  document.getElementById("thR").textContent = THRESH_ROLL.toFixed(2);
-});
+let device;
+let server;
+let characteristic;
 
-const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
+// 最新センサー値
+let latestRight = { pitch: 0, roll: 0 };
+let latestLeft  = { pitch: 0, roll: 0 };
 
-let devices = {};
-let latestRight = [0,0];
-let latestLeft  = [0,0];
-let accelData = [["Time","Right_Pitch","Right_Roll","Left_Pitch","Left_Roll"]];
-let dataStore = {1:[],2:[]};
-const maxDataPoints = 300;
+// キャリブレーション値
+let calibRight = { pitch: 0, roll: 0 };
+let calibLeft  = { pitch: 0, roll: 0 };
 
-/* ---------- キャリブレーション用 ---------- */
-let calibRight = {pitch:0, roll:0};
-let calibLeft  = {pitch:0, roll:0};
-let isCalibrated = false;
+let calibrating = false;
+let calDataRight = [];
+let calDataLeft = [];
 
-let tempRight = [];
-let tempLeft  = [];
+// CSVログ
+let csvLogs = [
+    ["timestamp", "pattern", "angleLevel"]
+];
 
-/* BT 接続 */
-async function connect(id){
-  const btn = document.getElementById("connectBtn"+id);
-  btn.disabled = true;
 
-  try{
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices:true,
-      optionalServices:[serviceUUID]
-    });
+// ===== BLE 接続 ========================================================
 
-    devices[id] = device;
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(serviceUUID);
-    const char = await service.getCharacteristic(charUUID);
+async function connectBLE() {
+    try {
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ services: ["4fafc201-1fb5-459e-8fcc-c5c9c331914b"] }]
+        });
 
-    await char.startNotifications();
-    char.addEventListener("characteristicvaluechanged", e=>{
-      const text = new TextDecoder().decode(e.target.value).trim();
-      const parts = text.split(",");
+        server = await device.gatt.connect();
+        const service = await server.getPrimaryService("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
+        characteristic = await service.getCharacteristic("beb5483e-36e1-4688-b7f5-ea073f74076a");
 
-      if(parts.length >= 2){
-        const pitch = parseFloat(parts[0]);
-        const roll  = parseFloat(parts[1]);
+        characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", handleNotify);
 
-        if(id === 1){
-          latestRight = [pitch, roll];
-          document.getElementById("values1").textContent =
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
-          dataStore[1].push(pitch);
-          if(dataStore[1].length > maxDataPoints) dataStore[1].shift();
-          drawGraph(1);
-        } else {
-          latestLeft = [pitch, roll];
-          document.getElementById("values2").textContent =
-            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
-          dataStore[2].push(pitch);
-          if(dataStore[2].length > maxDataPoints) dataStore[2].shift();
-          drawGraph(2);
-        }
-
-        accelData.push([
-          new Date().toLocaleTimeString(),
-          latestRight[0], latestRight[1],
-          latestLeft[0], latestLeft[1]
-        ]);
-
-        checkLegCrossed();
-      }
-    });
-
-    document.getElementById("status"+id).textContent =
-      `✅ ${id===1 ? "右足" : "左足"} 接続成功`;
-  }
-  catch(err){
-    document.getElementById("status"+id).textContent = "❌ 接続失敗: " + err;
-    btn.disabled = false;
-  }
-}
-
-/* ---------- キャリブレーション開始 ---------- */
-function startCalibration(){
-  tempRight = [];
-  tempLeft  = [];
-  isCalibrated = false;
-
-  let sec = 10;
-  document.getElementById("calibStatus").textContent =
-    `キャリブレーション開始… ${sec}秒`;
-
-  let timer = setInterval(()=>{
-    sec--;
-
-    tempRight.push([...latestRight]);
-    tempLeft.push([...latestLeft]);
-
-    document.getElementById("calibStatus").textContent =
-      `キャリブレーション中… ${sec}秒`;
-
-    if(sec <= 0){
-      clearInterval(timer);
-
-      calibRight.pitch = avg(tempRight.map(v=>v[0]));
-      calibRight.roll  = avg(tempRight.map(v=>v[1]));
-
-      calibLeft.pitch  = avg(tempLeft.map(v=>v[0]));
-      calibLeft.roll   = avg(tempLeft.map(v=>v[1]));
-
-      isCalibrated = true;
-
-      document.getElementById("calibStatus").textContent =
-        `初期値設定完了：右(P:${calibRight.pitch.toFixed(1)},R:${calibRight.roll.toFixed(1)}) / 左(P:${calibLeft.pitch.toFixed(1)},R:${calibLeft.roll.toFixed(1)})`;
+        alert("接続成功！");
+    } catch (e) {
+        alert("接続失敗: " + e);
     }
-  }, 1000);
 }
 
-function avg(arr){ return arr.reduce((a,b)=>a+b,0) / arr.length; }
 
-/* =========================================================
-      足組み判定（方式B：左右それぞれの初期値との差で判定）
-========================================================= */
-function checkLegCrossed(){
-  if(!isCalibrated){
-    document.getElementById("result").textContent = "⚠ キャリブレーション未実施";
-    return;
-  }
+// ===== BLE 受信処理 ====================================================
 
-  /* 右足との差分 */
-  const rP = latestRight[0] - calibRight.pitch;
-  const rR = latestRight[1] - calibRight.roll;
+function handleNotify(event) {
+    const text = new TextDecoder().decode(event.target.value);
+    const obj = JSON.parse(text);
 
-  /* 左足との差分 */
-  const lP = latestLeft[0] - calibLeft.pitch;
-  const lR = latestLeft[1] - calibLeft.roll;
+    // M5 から送られてくる例：
+    // { "right": {pitch:13, roll:2}, "left": {pitch:-10, roll:-2} }
 
-  const resultEl = document.getElementById("result");
-  const styleEl  = document.getElementById("styleLabel");
+    latestRight.pitch = obj.right.pitch;
+    latestRight.roll  = obj.right.roll;
 
-  /* ---------- 判定（ピッチ & ロール両方満たす時だけ検知） ---------- */
+    latestLeft.pitch  = obj.left.pitch;
+    latestLeft.roll   = obj.left.roll;
 
-  // 右足が上の 90°
-  if(rP <= -70 && rR <= -95){
-    resultEl.textContent = "⚠ 足を組んでいます（右 90°）";
-    resultEl.style.background = "#ffccbc";
-    styleEl.textContent = "組み方: 右 90°";
-    return;
-  }
+    if (calibrating) {
+        calDataRight.push({ pitch: obj.right.pitch, roll: obj.right.roll });
+        calDataLeft.push({ pitch: obj.left.pitch, roll: obj.left.roll });
+        return;
+    }
 
-  // 右足 45°
-  if(rP <= -25 && rR <= -20){
-    resultEl.textContent = "⚠ 足を組んでいます（右 45°）";
-    resultEl.style.background = "#ffccbc";
-    styleEl.textContent = "組み方: 右 45°";
-    return;
-  }
-
-  // 左足が上の 90°
-  if(lP <= -70 && lR <= -95){
-    resultEl.textContent = "⚠ 足を組んでいます（左 90°）";
-    resultEl.style.background = "#ffccbc";
-    styleEl.textContent = "組み方: 左 90°";
-    return;
-  }
-
-  // 左足 45°
-  if(lP <= -25 && lR <= -20){
-    resultEl.textContent = "⚠ 足を組んでいます（左 45°）";
-    resultEl.style.background = "#ffccbc";
-    styleEl.textContent = "組み方: 左 45°";
-    return;
-  }
-
-  /* どれにも当てはまらなければ非組み */
-  resultEl.textContent = "✅ 足を組んでいません";
-  resultEl.style.background = "#c8e6c9";
-  styleEl.textContent = "組み方: —";
+    detectCrossLeg();
 }
 
-/* ---------- グラフ描画（Pitchのみ） ---------- */
-function drawGraph(id){
-  const ctx = document.getElementById("graph"+id).getContext("2d");
-  const data = dataStore[id];
-  const w = ctx.canvas.width, h = ctx.canvas.height;
 
-  ctx.clearRect(0,0,w,h);
-  ctx.fillStyle="#e0f2f1";
-  ctx.fillRect(0,0,w,h);
 
-  ctx.strokeStyle="#004d40";
-  ctx.beginPath();
-  ctx.moveTo(0,h/2);
-  ctx.lineTo(w,h/2);
-  ctx.stroke();
+// ===== キャリブレーション ============================================
 
-  if(data.length < 2) return;
+function startCalibration() {
+    calibrating = true;
+    calDataRight = [];
+    calDataLeft = [];
 
-  let maxVal = Math.max(...data.map(v=>Math.abs(v)));
-  let scale = (h/2 - 8) / (maxVal || 1);
+    document.getElementById("status").innerText = "キャリブレーション中... (10秒)";
 
-  ctx.strokeStyle = id===1 ? "#ff5252" : "#2979ff";
-  ctx.beginPath();
-  data.forEach((v,i)=>{
-    const x = (i/(maxDataPoints-1))*w;
-    const y = h/2 - v*scale;
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  });
-  ctx.stroke();
+    setTimeout(() => {
+        calibrating = false;
+
+        calibRight.pitch = average(calDataRight.map(v => v.pitch));
+        calibRight.roll  = average(calDataRight.map(v => v.roll));
+        calibLeft.pitch  = average(calDataLeft.map(v => v.pitch));
+        calibLeft.roll   = average(calDataLeft.map(v => v.roll));
+
+        document.getElementById("calRightPitch").innerText = calibRight.pitch.toFixed(1);
+        document.getElementById("calRightRoll").innerText  = calibRight.roll.toFixed(1);
+        document.getElementById("calLeftPitch").innerText  = calibLeft.pitch.toFixed(1);
+        document.getElementById("calLeftRoll").innerText   = calibLeft.roll.toFixed(1);
+
+        document.getElementById("status").innerText = "キャリブレーション完了！";
+    }, 10000);
 }
 
-/* ---------- Excel出力 ---------- */
-function downloadExcel(){
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(accelData);
-  XLSX.utils.book_append_sheet(wb, ws, "PitchRoll");
-  XLSX.writeFile(wb, "accel_pitch_roll_with_timestamps.xlsx");
+function average(arr) {
+    return arr.reduce((a,b)=>a+b,0) / arr.length;
 }
+
+
+
+// ===== 角度分類ロジック ===============================================
+
+function classifyAngleLevel(pitchDiff, rollDiff) {
+    if (pitchDiff <= -70 && rollDiff <= -95) return 90;
+    if (pitchDiff <= -25 && rollDiff <= -20) return 45;
+    if (pitchDiff <= -10 && rollDiff <= -10) return 15;
+    return 0;
+}
+
+function logCrossEvent(pattern, pitchDiff, rollDiff) {
+    const angleLevel = classifyAngleLevel(pitchDiff, rollDiff);
+    const timestamp = new Date().toLocaleString();
+    csvLogs.push([timestamp, pattern, angleLevel]);
+}
+
+
+// ===== 足組み判定（B方式：初期値からの絶対差）===========================
+
+function detectCrossLeg() {
+
+    // 差分（右足）
+    const rPitchDiff = latestRight.pitch - calibRight.pitch;
+    const rRollDiff  = latestRight.roll  - calibRight.roll;
+
+    // 差分（左足）
+    const lPitchDiff = latestLeft.pitch - calibLeft.pitch;
+    const lRollDiff  = latestLeft.roll  - calibLeft.roll;
+
+    // 右90°
+    if (rPitchDiff <= -70 && rRollDiff <= -95) {
+        logCrossEvent("右足・90度組み", rPitchDiff, rRollDiff);
+        document.getElementById("status").innerText = "右足の90度組み";
+        return;
+    }
+
+    // 左90°
+    if (lPitchDiff <= -70 && lRollDiff <= -95) {
+        logCrossEvent("左足・90度組み", lPitchDiff, lRollDiff);
+        document.getElementById("status").innerText = "左足の90度組み";
+        return;
+    }
+
+    // 右45°
+    if (rPitchDiff <= -25 && rRollDiff <= -20) {
+        logCrossEvent("右足・45度組み", rPitchDiff, rRollDiff);
+        document.getElementById("status").innerText = "右足の45度組み";
+        return;
+    }
+
+    // 左45°
+    if (lPitchDiff <= -25 && lRollDiff <= -20) {
+        logCrossEvent("左足・45度組み", lPitchDiff, lRollDiff);
+        document.getElementById("status").innerText = "左足の45度組み";
+        return;
+    }
+
+    // 組んでいない
+    document.getElementById("status").innerText = "組んでいない";
+}
+
+
+
+// ===== CSV 出力 ========================================================
+
+function downloadCSV() {
+    const csvContent = csvLogs.map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "leg_cross_log.csv";
+    a.click();
+
+    URL.revokeObjectURL(url);
+}
+
 </script>
-
 </body>
 </html>
-このコードに機能を付け加えて
