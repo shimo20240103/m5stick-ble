@@ -13,7 +13,6 @@
     .graph-container{ margin:18px auto; width:640px; }
     canvas{ border:2px solid #004D40; border-radius:10px; background:#e0f2f1; display:block; margin:8px auto; }
   </style>
-
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -41,18 +40,19 @@
 <div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
 <div class="graph-container"><h2>左足 Pitch</h2><canvas id="graph2" width="640" height="140"></canvas></div>
 
-
 <script>
 /* =======================================
    ★ 合成値（ベクトル値）判定用 閾値
    ======================================= */
-const THRESH_VECTOR = 20.0;   // 例：差が20以上で足組みと判定
+const THRESH_15 = 24.524;  // 15組判定
+const THRESH_45 = 63.679;  // 45組判定
+const THRESH_90 = 90.0;    // 90組判定（必要に応じ調整）
 
 /* BLE UUID */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-/* pitches & rolls */
+/* 最新 pitch/roll */
 let latestRight = [0,0];
 let latestLeft  = [0,0];
 
@@ -69,12 +69,10 @@ let isCalibrated = false;
 let tempRight = [];
 let tempLeft  = [];
 
-
-/* ---- 合成値 ---- */
+/* ---- 合成値計算 ---- */
 function vector(p, r){
   return Math.sqrt(p*p + r*r);
 }
-
 
 /* =======================================
    ★ BLE接続
@@ -132,7 +130,6 @@ async function connect(id){
   }
 }
 
-
 /* =======================================
    ★ キャリブレーション
    ======================================= */
@@ -171,9 +168,8 @@ function avg(arr){
   return arr.reduce((a,b)=>a+b,0) / arr.length;
 }
 
-
 /* =======================================
-   ★ 合成値だけで足組み判定
+   ★ 足組み判定（15/45/90組）
    ======================================= */
 function checkLegCrossed(){
   if(!isCalibrated){
@@ -188,23 +184,32 @@ function checkLegCrossed(){
 
   const rVec = vector(rp, rr);
   const lVec = vector(lp, lr);
+  const sumVec = rVec + lVec;
+  const maxVec = Math.max(rVec, lVec);
+
+  let crossedText = "足組み状態: 不明";
+
+  if(sumVec >= THRESH_15*2){       // 両方 +24.524 なら 15組
+    crossedText = "15組";
+  } else if(maxVec >= THRESH_15){  // どちらか +24.524 なら 45組
+    crossedText = "45組";
+  } else if(maxVec >= THRESH_45){  // どちらか +63.679 なら 90組
+    crossedText = "90組";
+  } else {
+    crossedText = "足を組んでいません";
+  }
+
   const diff = Math.abs(rVec - lVec);
-
-  const crossed = diff > THRESH_VECTOR;
-
-  document.getElementById("result").textContent =
-    crossed ? `足を組んでいます（差:${diff.toFixed(2)}）`
-            : `足を組んでいません（差:${diff.toFixed(2)}）`;
+  document.getElementById("result").textContent = `${crossedText}（差:${diff.toFixed(2)}）`;
 
   accelData.push([
     new Date().toLocaleTimeString(),
     rp, rr, rVec,
     lp, lr, lVec,
     diff,
-    crossed?1:0
+    crossedText
   ]);
 }
-
 
 /* =======================================
    ★ グラフ描画
@@ -235,7 +240,6 @@ function drawGraph(id){
   ctx.stroke();
 }
 
-
 /* =======================================
    ★ Excel 出力
    ======================================= */
@@ -245,7 +249,7 @@ function downloadExcel(){
   XLSX.utils.book_append_sheet(wb, ws, "VectorJudge");
   XLSX.writeFile(wb, "vector_judge.xlsx");
 }
-
 </script>
+
 </body>
 </html>
