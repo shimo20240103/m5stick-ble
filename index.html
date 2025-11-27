@@ -39,7 +39,7 @@
 
 <div class="infoRow">
   <div class="infoBox">閾値 Pitch(T_P): <span id="thP"></span>°</div>
-  <div class="infoBox">閾値 Roll(T_R):  <span id="thR"></span>°</span></div>
+  <div class="infoBox">閾値 Roll(T_R):  <span id="thR"></span>°</div>
 </div>
 
 <div class="graph-container"><h2>右足 Pitch</h2><canvas id="graph1" width="640" height="140"></canvas></div>
@@ -104,7 +104,20 @@ async function connect(id){
     await char.startNotifications();
 
     char.addEventListener("characteristicvaluechanged", e=>{
-      const text = new TextDecoder().decode(e.target.value).trim();
+      // DataView や ArrayBufferView を想定して安全にデコード
+      const value = e.target.value;
+      let text = "";
+      try {
+        if (value && value.buffer) {
+          text = new TextDecoder().decode(value.buffer).trim();
+        } else {
+          text = new TextDecoder().decode(value).trim();
+        }
+      } catch(ex){
+        console.error("デコードエラー:", ex, value);
+        return;
+      }
+
       const parts = text.split(",");
       if(parts.length >= 2){
         const pitch = parseFloat(parts[0]);
@@ -144,8 +157,11 @@ async function connect(id){
 
     document.getElementById("status"+id).textContent =
       `:チェックマーク_緑: ${id===1 ? "右足" : "左足"} 接続成功`;
+    btn.textContent = id===1 ? "右足 接続済み" : "左足 接続済み";
+    // 接続済みはそのまま無効化しておく（必要なら切断処理を追加）
   }
   catch(err){
+    console.error(err);
     document.getElementById("status"+id).textContent = ":x: 接続失敗: " + err;
     btn.disabled = false;
   }
@@ -162,20 +178,26 @@ function startCalibration(){
     `キャリブレーション開始… ${sec}秒`;
 
   let timer = setInterval(()=>{
-    sec--;
+    // 最新値をサンプルとして取る（未接続でも [0,0] が入る）
     tempRight.push([...latestRight]);
     tempLeft.push([...latestLeft]);
 
+    sec--;
     document.getElementById("calibStatus").textContent =
       `キャリブレーション中… ${sec}秒`;
 
     if(sec <= 0){
       clearInterval(timer);
 
-      calibRight.pitch = avg(tempRight.map(v=>v[0]));
-      calibRight.roll  = avg(tempRight.map(v=>v[1]));
-      calibLeft.pitch  = avg(tempLeft.map(v=>v[0]));
-      calibLeft.roll   = avg(tempLeft.map(v=>v[1]));
+      const rightPArr = tempRight.map(v=>v[0]);
+      const rightRArr = tempRight.map(v=>v[1]);
+      const leftPArr  = tempLeft.map(v=>v[0]);
+      const leftRArr  = tempLeft.map(v=>v[1]);
+
+      calibRight.pitch = avg(rightPArr);
+      calibRight.roll  = avg(rightRArr);
+      calibLeft.pitch  = avg(leftPArr);
+      calibLeft.roll   = avg(leftRArr);
 
       isCalibrated = true;
       document.getElementById("calibStatus").textContent =
@@ -184,7 +206,11 @@ function startCalibration(){
   }, 1000);
 }
 
-function avg(arr){ return arr.reduce((a,b)=>a+b,0) / arr.length; }
+/* 安全な平均（空配列は 0 を返す） */
+function avg(arr){
+  if(!Array.isArray(arr) || arr.length === 0) return 0;
+  return arr.reduce((a,b)=>a+b,0) / arr.length;
+}
 
 /* -------- angleLevel -------- */
 function computeAngleLevel(){
