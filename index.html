@@ -10,32 +10,15 @@
     button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
     #status1,#status2,#result { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
     pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
-
-    /* ======== カウントダウンオーバーレイ ======== */
-    #countdownOverlay {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,0.65);
-      display: none;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      color: white;
-      font-size: 80px;
-      font-weight: bold;
-      flex-direction: column;
-    }
-    #countdownOverlay span {
-      font-size: 140px;
-      margin-top: 10px;
-    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <h1>M5StickC 足組み判定（実験用）</h1>
+
+<!-- カウントダウン表示 -->
+<div id="countdown" style="font-size:48px; font-weight:bold; margin-top:10px;">10秒</div>
 
 <div class="controls">
   <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
@@ -59,44 +42,30 @@
   <button onclick="runSequence('left','90')">左: N → 90 → rest</button>
 </div>
 
-<!-- ★ 大きなカウントダウンオーバーレイ -->
-<div id="countdownOverlay">
-  <div>あと</div>
-  <span id="countdownNumber">10</span>
-  <div>秒</div>
-</div>
-
 <script>
-/* ======== 大きなカウントダウン ======== */
+// === カウントダウン表示 ===
 function startCountdown(sec){
-  const overlay = document.getElementById("countdownOverlay");
-  const num = document.getElementById("countdownNumber");
-
-  overlay.style.display = "flex";
-  num.textContent = sec;
-
+  const cd = document.getElementById("countdown");
+  cd.textContent = sec + "秒";
   const timer = setInterval(()=>{
     sec--;
-    num.textContent = sec;
-
-    if(sec <= 0){
-      clearInterval(timer);
-      overlay.style.display = "none";
-    }
+    cd.textContent = sec + "秒";
+    if(sec <= 0){ clearInterval(timer); }
   },1000);
 }
 
+// フェーズ切替時に呼ぶ
 function nextPhase(){
   if(typeof playBeep === "function") playBeep();
   startCountdown(10);
 }
 
 /* =======================================
-   閾値
+   閾値（表示用・必要なら調整）
    ======================================= */
-const THRESH_15 = 24.524;  
-const THRESH_45 = 63.679;  
-const THRESH_90 = 90.0;    
+const THRESH_15 = 24.524;  // 15組判定
+const THRESH_45 = 63.679;  // 45組判定
+const THRESH_90 = 90.0;    // 90組判定（必要に応じ調整）
 
 /* BLE UUID */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -106,18 +75,24 @@ const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 let latestRight = [0,0];
 let latestLeft  = [0,0];
 
-/* Excel用データ */
+/* Excel用データ (Phase 列追加) */
 let accelData = [["Time","Right_P","Right_R","Right_Vec","Left_P","Left_R","Left_Vec","DiffVector","Crossed","Phase"]];
 
+/* データ保管（グラフは廃止） */
 let dataStore = {1:[],2:[]};
 const maxDataPoints = 300;
-let currentPhase = "idle";
 
+/* 実験用の現在フェーズ */
+let currentPhase = "idle"; // idle / N / 45 / 90 / rest
+
+/* ---- 合成値計算 ---- */
 function vector(p, r){
   return Math.sqrt(p*p + r*r);
 }
 
-/* BLE接続 */
+/* =======================================
+   ★ BLE接続
+   ======================================= */
 async function connect(id){
   const btn = document.getElementById("connectBtn"+id);
   btn.disabled = true;
@@ -146,10 +121,14 @@ async function connect(id){
           latestRight = [pitch, roll];
           document.getElementById("values1").textContent =
             `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)} 合成:${vec.toFixed(2)}`;
+          dataStore[1].push(pitch);
+          if(dataStore[1].length > maxDataPoints) dataStore[1].shift();
         }else{
           latestLeft = [pitch, roll];
           document.getElementById("values2").textContent =
             `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)} 合成:${vec.toFixed(2)}`;
+          dataStore[2].push(pitch);
+          if(dataStore[2].length > maxDataPoints) dataStore[2].shift();
         }
 
         checkLegCrossed();
@@ -165,7 +144,9 @@ async function connect(id){
   }
 }
 
-/* 足組み判定 */
+/* =======================================
+   ★ 足組み判定（キャリブレーション無し）
+   ======================================= */
 function checkLegCrossed(){
   const rp = latestRight[0];
   const rr = latestRight[1];
@@ -179,6 +160,7 @@ function checkLegCrossed(){
 
   let crossedText = "不明";
 
+  // 以前のルールを踏襲（必要に応じて調整してください）
   if(sumVec >= THRESH_15*2){
     crossedText = "15組";
   } else if(maxVec >= THRESH_45){
@@ -190,8 +172,7 @@ function checkLegCrossed(){
   }
 
   const diff = Math.abs(rVec - lVec);
-  document.getElementById("result").textContent =
-    `${crossedText}（差:${diff.toFixed(2)}）`;
+  document.getElementById("result").textContent = `${crossedText}（差:${diff.toFixed(2)}）`;
 
   accelData.push([
     new Date().toLocaleTimeString(),
@@ -204,7 +185,10 @@ function checkLegCrossed(){
 }
 
 /* =======================================
-   実験シーケンス
+   ★ 実験シーケンス (N -> target -> rest)
+   - 各フェーズは 10秒
+   - フェーズ切替時にブザーを鳴らす
+   - 45/90 フェーズ中は背景を赤にする
    ======================================= */
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
@@ -214,20 +198,23 @@ function playBeep(){
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = 'sine';
-    o.frequency.value = 880;
+    o.frequency.value = 880; // 周波数
     o.connect(g);
     g.connect(ctx.destination);
     o.start();
     g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
-    setTimeout(()=>{ o.stop(); ctx.close(); }, 250);
-  }catch(e){}
+    g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+    setTimeout(()=>{ o.stop(); ctx.close(); }, 200);
+  }catch(e){ console.warn('beep error', e); }
 }
 
 function setPhase(phase){
   currentPhase = phase;
+  playBeep(); // フェーズ開始
+  startCountdown(10);(phase){
+  currentPhase = phase;
+  // フェーズ切替時にブザーを鳴らす
   playBeep();
-  startCountdown(10);  // ★ フェーズ開始時にカウントダウン開始
 
   if(phase === '45' || phase === '90'){
     document.body.style.background = '#ff5555';
@@ -237,23 +224,31 @@ function setPhase(phase){
 }
 
 async function runSequence(side, target){
+  // 無効化 (重複実行防止)
   const buttons = document.querySelectorAll('button');
   buttons.forEach(b=>b.disabled = true);
 
+  // 1) N (10s)
   setPhase('N');
   await sleep(10000);
+  playBeep(); // フェーズ終了時ブザー
 
+  // 2) target (45 or 90) - 切替のタイミングでブザー
   setPhase(target);
   await sleep(10000);
 
+  // 3) rest (10s) - 切替のタイミングでブザー
   setPhase('rest');
   await sleep(10000);
 
+  // 終了
   setPhase('idle');
   buttons.forEach(b=>b.disabled = false);
 }
 
-/* Excel出力 */
+/* =======================================
+   ★ Excel 出力
+   ======================================= */
 function downloadExcel(){
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(accelData);
