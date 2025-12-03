@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>M5StickC 足組みデータ取得（実験用）</title>
 <style>
-body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
+body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; transition: background 0.3s; }
 h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
 .controls { margin:12px 0; }
 button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
@@ -51,8 +51,11 @@ let latestRight = [0,0];
 let latestLeft = [0,0];
 
 /* Excel用データ */
-let accelData = [["Time","Right_P","Right_R","Left_P","Left_R","Phase"]];
+let accelData = [["Time","Right_P","Right_R","Rvector","Left_P","Left_R","Lvector","Phase"]];
 let currentPhase = "idle";
+
+/* ベクトル計算 */
+function vector(p,r){ return Math.sqrt(p*p + r*r); }
 
 /* BLE接続 */
 async function connect(id){
@@ -80,11 +83,14 @@ async function connect(id){
                     latestLeft = [pitch, roll];
                     document.getElementById("values2").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
                 }
+                // ベクトル計算
+                const Rvec = vector(latestRight[0], latestRight[1]);
+                const Lvec = vector(latestLeft[0], latestLeft[1]);
                 // Excel用に記録
                 accelData.push([
                     new Date().toLocaleTimeString(),
-                    latestRight[0], latestRight[1],
-                    latestLeft[0], latestLeft[1],
+                    latestRight[0], latestRight[1], Rvec,
+                    latestLeft[0], latestLeft[1], Lvec,
                     currentPhase
                 ]);
             }
@@ -133,6 +139,12 @@ function startCountdown(sec){
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 function setPhase(phase){
     currentPhase = phase;
+    // 背景色変更
+    if(phase.includes('45') || phase.includes('90')){
+        document.body.style.background = '#ff5555';
+    } else {
+        document.body.style.background = '#eaf7f3';
+    }
     startCountdown(10);
 }
 async function runSequence(side, target){
