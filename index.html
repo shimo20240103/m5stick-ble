@@ -249,9 +249,12 @@ async function runSequence(side, target){
   setPhase('rest');
   await sleep(10000);
 
-  setPhase('idle');
+  // 最後の idle フェーズは削除
+  // setPhase('idle');
+
   buttons.forEach(b=>b.disabled = false);
 }
+
 
 /* Excel出力 */
 function downloadExcel(){
