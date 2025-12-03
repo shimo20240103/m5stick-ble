@@ -70,18 +70,14 @@ function playBeep(){
 
 function startCountdown(sec){
   const display = document.getElementById("countdownDisplay");
-
-  // 開始時ビープ
-  playBeep();
-
+  playBeep(); // 開始時ビープ
   display.textContent = sec;
   const timer = setInterval(()=>{
     sec--;
     if(sec <= 0){
       clearInterval(timer);
       display.textContent = "";
-      // 終了時ビープ
-      playBeep();
+      playBeep(); // 終了時ビープ
     } else {
       display.textContent = sec;
     }
@@ -104,10 +100,8 @@ let latestRight = [0,0];
 let latestLeft  = [0,0];
 
 /* Excel用データ */
-let accelData = [["Time","Right_P","Right_R","Right_Vec","Left_P","Left_R","Left_Vec","DiffVector","Crossed","Phase"]];
+let accelData = [["Time","Right_P","Right_R","Right_Vec","Left_P","Left_R","Left_Vec","Crossed","Phase"]];
 
-let dataStore = {1:[],2:[]};
-const maxDataPoints = 300;
 let currentPhase = "idle";
 
 function vector(p, r){
@@ -201,13 +195,13 @@ function checkLegCrossed(){
 }
 
 /* =======================================
-   実験シーケンス
+   実験シーケンス（左右別フェーズ名）
    ======================================= */
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
 function setPhase(phase){
   currentPhase = phase;
-  if(phase === '45' || phase === '90'){
+  if(phase.includes('45') || phase.includes('90')){
     document.body.style.background = '#ff5555';
   } else {
     document.body.style.background = '#eaf7f3';
@@ -219,13 +213,15 @@ async function runSequence(side, target){
   const buttons = document.querySelectorAll('button');
   buttons.forEach(b=>b.disabled = true);
 
-  setPhase('N');
+  const prefix = side === 'left' ? 'L' : 'R';
+
+  setPhase(prefix + 'N');
   await sleep(10000);
 
-  setPhase(target);
+  setPhase(prefix + target);  // 45または90
   await sleep(10000);
 
-  setPhase('rest');
+  setPhase(prefix + 'rest');
   await sleep(10000);
 
   buttons.forEach(b=>b.disabled = false);
