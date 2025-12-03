@@ -67,24 +67,251 @@
 </div>
 
 <script>
-/* ======== 大きなカウントダウン ======== */
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>M5StickC 足組み判定（実験用・合成値ベース）</title>
+  <style>
+    body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
+    h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
+    .controls { margin:12px 0; }
+    button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
+    #status1,#status2,#result { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
+    pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
+
+    /* カウントダウン表示 */
+    #countdownDisplay {
+      font-size: 60px;
+      font-weight: bold;
+      color: #d32f2f;
+      margin: 15px 0;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<h1>M5StickC 足組み判定（実験用）</h1>
+
+<div class="controls">
+  <button id="connectBtn1" onclick="connect(1)">右足 接続</button>
+  <button id="connectBtn2" onclick="connect(2)">左足 接続</button>
+  <button onclick="downloadExcel()">Excelダウンロード</button>
+</div>
+
+<div id="status1">右足: 未接続</div>
+<pre id="values1">Pitch:0.00 Roll:0.00 合成:0.00</pre>
+
+<div id="status2">左足: 未接続</div>
+<pre id="values2">Pitch:0.00 Roll:0.00 合成:0.00</pre>
+
+<div id="result">足組み状態: 不明</div>
+
+<!-- 実験ボタン群 -->
+<div class="controls">
+  <button onclick="runSequence('right','45')">右: N → 45 → rest</button>
+  <button onclick="runSequence('right','90')">右: N → 90 → rest</button>
+  <button onclick="runSequence('left','45')">左: N → 45 → rest</button>
+  <button onclick="runSequence('left','90')">左: N → 90 → rest</button>
+</div>
+
+<!-- HTML内カウントダウン -->
+<div id="countdownDisplay"></div>
+
+<script>
+/* ======== カウントダウン（開始時・終了時にビープ） ======== */
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 880;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
+    setTimeout(()=>{ o.stop(); ctx.close(); }, 250);
+  }catch(e){}
+}
+
 function startCountdown(sec){
-  const overlay = document.getElementById("countdownOverlay");
-  const num = document.getElementById("countdownNumber");
+  const display = document.getElementById("countdownDisplay");
 
-  overlay.style.display = "flex";
-  num.textContent = sec;
+  // 開始時ビープ
+  playBeep();
 
+  display.textContent = sec;
   const timer = setInterval(()=>{
     sec--;
-    num.textContent = sec;
-
     if(sec <= 0){
       clearInterval(timer);
-      overlay.style.display = "none";
+      display.textContent = "";
+      // 終了時ビープ
+      playBeep();
+    } else {
+      display.textContent = sec;
     }
   },1000);
 }
+
+/* =======================================
+   閾値
+   ======================================= */
+const THRESH_15 = 24.524;  
+const THRESH_45 = 63.679;  
+const THRESH_90 = 90.0;    
+
+/* BLE UUID */
+const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
+
+/* 最新 pitch/roll */
+let latestRight = [0,0];
+let latestLeft  = [0,0];
+
+/* Excel用データ */
+let accelData = [["Time","Right_P","Right_R","Right_Vec","Left_P","Left_R","Left_Vec","DiffVector","Crossed","Phase"]];
+
+let dataStore = {1:[],2:[]};
+const maxDataPoints = 300;
+let currentPhase = "idle";
+
+function vector(p, r){
+  return Math.sqrt(p*p + r*r);
+}
+
+/* BLE接続 */
+async function connect(id){
+  const btn = document.getElementById("connectBtn"+id);
+  btn.disabled = true;
+
+  try{
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices:true,
+      optionalServices:[serviceUUID]
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(serviceUUID);
+    const char = await service.getCharacteristic(charUUID);
+    await char.startNotifications();
+
+    char.addEventListener("characteristicvaluechanged", e=>{
+      const value = new TextDecoder().decode(e.target.value).trim();
+      const parts = value.split(",");
+
+      if(parts.length >= 2){
+        const pitch = parseFloat(parts[0]);
+        const roll  = parseFloat(parts[1]);
+        const vec   = vector(pitch, roll);
+
+        if(id === 1){
+          latestRight = [pitch, roll];
+          document.getElementById("values1").textContent =
+            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)} 合成:${vec.toFixed(2)}`;
+        }else{
+          latestLeft = [pitch, roll];
+          document.getElementById("values2").textContent =
+            `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)} 合成:${vec.toFixed(2)}`;
+        }
+
+        checkLegCrossed();
+      }
+    });
+
+    document.getElementById("status"+id).textContent =
+      `${id===1?"右":"左"}足 接続完了`;
+
+  } catch(e){
+    alert("接続失敗: "+e);
+    btn.disabled = false;
+  }
+}
+
+/* 足組み判定 */
+function checkLegCrossed(){
+  const rp = latestRight[0];
+  const rr = latestRight[1];
+  const lp = latestLeft[0];
+  const lr = latestLeft[1];
+
+  const rVec = vector(rp, rr);
+  const lVec = vector(lp, lr);
+  const sumVec = rVec + lVec;
+  const maxVec = Math.max(rVec, lVec);
+
+  let crossedText = "不明";
+
+  if(sumVec >= THRESH_15*2){
+    crossedText = "15組";
+  } else if(maxVec >= THRESH_90){
+    crossedText = "90組";
+  } else if(maxVec >= THRESH_45){
+    crossedText = "45組";
+  } else {
+    crossedText = "足を組んでいません";
+  }
+
+  const diff = Math.abs(rVec - lVec);
+  document.getElementById("result").textContent =
+    `${crossedText}（差:${diff.toFixed(2)}）`;
+
+  accelData.push([
+    new Date().toLocaleTimeString(),
+    rp, rr, rVec,
+    lp, lr, lVec,
+    diff,
+    crossedText,
+    currentPhase
+  ]);
+}
+
+/* =======================================
+   実験シーケンス
+   ======================================= */
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+function setPhase(phase){
+  currentPhase = phase;
+  if(phase === '45' || phase === '90'){
+    document.body.style.background = '#ff5555';
+  } else {
+    document.body.style.background = '#eaf7f3';
+  }
+  startCountdown(10);
+}
+
+async function runSequence(side, target){
+  const buttons = document.querySelectorAll('button');
+  buttons.forEach(b=>b.disabled = true);
+
+  setPhase('N');
+  await sleep(10000);
+
+  setPhase(target);
+  await sleep(10000);
+
+  setPhase('rest');
+  await sleep(10000);
+
+  buttons.forEach(b=>b.disabled = false);
+}
+
+/* Excel出力 */
+function downloadExcel(){
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(accelData);
+  XLSX.utils.book_append_sheet(wb, ws, "VectorJudge");
+  XLSX.writeFile(wb, "vector_judge_experiment.xlsx");
+}
+</script>
+
+</body>
+</html>
+
 
 function nextPhase(){
   if(typeof playBeep === "function") playBeep();
