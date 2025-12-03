@@ -40,6 +40,23 @@
 </div>
 
 <script>
+// === カウントダウン表示 ===
+function startCountdown(sec){
+  const cd = document.getElementById("countdown");
+  cd.textContent = sec + "秒";
+  const timer = setInterval(()=>{
+    sec--;
+    cd.textContent = sec + "秒";
+    if(sec <= 0){ clearInterval(timer); }
+  },1000);
+}
+
+// フェーズ切替時に呼ぶ
+function nextPhase(){
+  if(typeof playBeep === "function") playBeep();
+  startCountdown(10);
+}
+
 /* =======================================
    閾値（表示用・必要なら調整）
    ======================================= */
