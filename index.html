@@ -11,6 +11,7 @@ button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border
 #status1,#status2 { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
 pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
 #countdownDisplay { font-size: 120px; font-weight: bold; color: #0d0d0d; margin: 30px 0; }
+#currentPhaseDisplay { font-size: 24px; font-weight:bold; margin-top:20px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
@@ -38,7 +39,8 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
   <button onclick="runSequence('left','90')">左: N → 90 → rest</button>
 </div>
 
-<!-- カウントダウン表示 -->
+<!-- フェーズとカウントダウン表示 -->
+<div id="currentPhaseDisplay">現在のフェーズ: idle</div>
 <div id="countdownDisplay"></div>
 
 <script>
@@ -83,10 +85,8 @@ async function connect(id){
                     latestLeft = [pitch, roll];
                     document.getElementById("values2").textContent = `Pitch:${pitch.toFixed(2)} Roll:${roll.toFixed(2)}`;
                 }
-                // ベクトル計算
                 const Rvec = vector(latestRight[0], latestRight[1]);
                 const Lvec = vector(latestLeft[0], latestLeft[1]);
-                // Excel用に記録
                 accelData.push([
                     new Date().toLocaleTimeString(),
                     latestRight[0], latestRight[1], Rvec,
@@ -102,7 +102,7 @@ async function connect(id){
     }
 }
 
-/* カウントダウン */
+/* ビープ音 */
 function playBeep(){
     try{
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -119,24 +119,24 @@ function playBeep(){
     }catch(e){}
 }
 
+/* カウントダウン */
 function startCountdown(sec){
     const display = document.getElementById("countdownDisplay");
-    playBeep(); // 開始時ビープ
-    display.textContent = sec;
+    playBeep(); // 開始ビープ
+    display.textContent = sec + "秒";
     const timer = setInterval(()=>{
         sec--;
         if(sec <= 0){
             clearInterval(timer);
-            display.textContent = "";
-            playBeep(); // 終了時ビープ
+            display.textContent = "完了!";
+            playBeep(); // 終了ビープ
         } else {
-            display.textContent = sec;
+            display.textContent = sec + "秒";
         }
     },1000);
 }
 
-/* 実験シーケンス */
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+/* フェーズ設定 */
 function setPhase(phase){
     currentPhase = phase;
     // 背景色変更
@@ -145,18 +145,33 @@ function setPhase(phase){
     } else {
         document.body.style.background = '#eaf7f3';
     }
+    // 画面表示
+    const phaseDisplay = document.getElementById("currentPhaseDisplay");
+    let side = phase.startsWith('R') ? '右足' : phase.startsWith('L') ? '左足' : '';
+    let action = phase.replace(/^R|L/, '');
+    phaseDisplay.textContent = `現在のフェーズ: ${side} → ${action}`;
+
     startCountdown(10);
 }
+
+/* 実験シーケンス */
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
 async function runSequence(side, target){
     const buttons = document.querySelectorAll('button');
     buttons.forEach(b=>b.disabled = true);
+
     const prefix = side === 'left' ? 'L' : 'R';
+
     setPhase(prefix+'N');
     await sleep(10000);
+
     setPhase(prefix+target); // 45または90
     await sleep(10000);
+
     setPhase(prefix+'rest');
     await sleep(10000);
+
     buttons.forEach(b=>b.disabled = false);
 }
 
