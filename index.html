@@ -10,6 +10,7 @@ h1 { background:#a7ffeb; margin:0; padding:18px 0; border-bottom-left-radius:14p
 button { font-size:15px; padding:8px 16px; margin:6px; border-radius:8px; border:none; background:#26a69a; color:#fff; cursor:pointer;}
 #status1,#status2 { margin-top:10px; font-weight:bold; font-size:18px; display:block; }
 pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:10px; margin-top:10px; }
+#countdownDisplay { font-size: 120px; font-weight: bold; color: #0d0d0d; margin: 30px 0; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
@@ -29,6 +30,17 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
 <div id="status2">左足: 未接続</div>
 <pre id="values2">Pitch:0.00 Roll:0.00</pre>
 
+<!-- 実験ボタン群 -->
+<div class="controls">
+  <button onclick="runSequence('right','45')">右: N → 45 → rest</button>
+  <button onclick="runSequence('right','90')">右: N → 90 → rest</button>
+  <button onclick="runSequence('left','45')">左: N → 45 → rest</button>
+  <button onclick="runSequence('left','90')">左: N → 90 → rest</button>
+</div>
+
+<!-- カウントダウン表示 -->
+<div id="countdownDisplay"></div>
+
 <script>
 /* BLE UUID */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -39,8 +51,10 @@ let latestRight = [0,0];
 let latestLeft = [0,0];
 
 /* Excel用データ */
-let accelData = [["Time","Right_P","Right_R","Left_P","Left_R"]];
+let accelData = [["Time","Right_P","Right_R","Left_P","Left_R","Phase"]];
+let currentPhase = "idle";
 
+/* BLE接続 */
 async function connect(id){
     const btn = document.getElementById("connectBtn"+id);
     btn.disabled = true;
@@ -70,7 +84,8 @@ async function connect(id){
                 accelData.push([
                     new Date().toLocaleTimeString(),
                     latestRight[0], latestRight[1],
-                    latestLeft[0], latestLeft[1]
+                    latestLeft[0], latestLeft[1],
+                    currentPhase
                 ]);
             }
         });
@@ -79,6 +94,58 @@ async function connect(id){
         alert("接続失敗: "+e);
         btn.disabled = false;
     }
+}
+
+/* カウントダウン */
+function playBeep(){
+    try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 880;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
+        setTimeout(()=>{ o.stop(); ctx.close(); }, 250);
+    }catch(e){}
+}
+
+function startCountdown(sec){
+    const display = document.getElementById("countdownDisplay");
+    playBeep(); // 開始時ビープ
+    display.textContent = sec;
+    const timer = setInterval(()=>{
+        sec--;
+        if(sec <= 0){
+            clearInterval(timer);
+            display.textContent = "";
+            playBeep(); // 終了時ビープ
+        } else {
+            display.textContent = sec;
+        }
+    },1000);
+}
+
+/* 実験シーケンス */
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function setPhase(phase){
+    currentPhase = phase;
+    startCountdown(10);
+}
+async function runSequence(side, target){
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(b=>b.disabled = true);
+    const prefix = side === 'left' ? 'L' : 'R';
+    setPhase(prefix+'N');
+    await sleep(10000);
+    setPhase(prefix+target); // 45または90
+    await sleep(10000);
+    setPhase(prefix+'rest');
+    await sleep(10000);
+    buttons.forEach(b=>b.disabled = false);
 }
 
 /* Excel出力 */
