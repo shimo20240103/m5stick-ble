@@ -210,7 +210,7 @@ function playBeep(){
 
 function setPhase(phase){
   currentPhase = phase;
-  playBeep(); // フェーズ開始
+  playBeep(); // フェーズ開始(フェーズ開始時ブザー)
   startCountdown(10);(phase){
   currentPhase = phase;
   // フェーズ切替時にブザーを鳴らす
@@ -227,19 +227,25 @@ async function runSequence(side, target){
   // 無効化 (重複実行防止)
   const buttons = document.querySelectorAll('button');
   buttons.forEach(b=>b.disabled = true);
+  
+  // 安全のため2秒後にも再度解除を試みる（万が一のJS停止対策）
+  setTimeout(()=>{ buttons.forEach(b=>b.disabled = false); }, 2000);(b=>b.disabled = true);
 
   // 1) N (10s)
   setPhase('N');
   await sleep(10000);
   playBeep(); // フェーズ終了時ブザー
+  playBeep(); // フェーズ終了時ブザー
 
   // 2) target (45 or 90) - 切替のタイミングでブザー
   setPhase(target);
   await sleep(10000);
+  playBeep(); // フェーズ終了時ブザー
 
   // 3) rest (10s) - 切替のタイミングでブザー
   setPhase('rest');
   await sleep(10000);
+  playBeep(); // フェーズ終了時ブザー
 
   // 終了
   setPhase('idle');
