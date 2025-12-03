@@ -149,7 +149,7 @@ function setPhase(phase){
     const phaseDisplay = document.getElementById("currentPhaseDisplay");
     let side = phase.startsWith('R') ? '右足' : phase.startsWith('L') ? '左足' : '';
     let action = phase.replace(/^R|L/, '');
-    phaseDisplay.textContent = `現在のフェーズ: ${side} → ${action}`;
+    phaseDisplay.textContent = `現在のフェーズ: ${side} : ${action}`;
 
     startCountdown(10);
 }
