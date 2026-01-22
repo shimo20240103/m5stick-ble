@@ -56,6 +56,7 @@ const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 let latestRight=[0,0], latestLeft=[0,0];
 let baseRight=null, baseLeft=null;
 let declaration="none";
+let phase="idle"; // idle / N / cross
 
 /* ===== Excel ===== */
 let accelData=[[
@@ -63,13 +64,14 @@ let accelData=[[
   "Right_P","Right_R","Rvec","Rjudge",
   "Left_P","Left_R","Lvec","Ljudge",
   "Declaration",
-  "Guess"
+  "Guess",
+  "Phase"
 ]];
 
 /* ===== 判定関数 ===== */
 function judge(vec, side){
   if(vec > 42) return side+"90";
-  if(vec > 8) return side+"45";
+  if(vec > 8)  return side+"45";
   return side+"N";
 }
 
@@ -124,7 +126,8 @@ async function connect(id){
       latestRight[0],latestRight[1],Rvec.toFixed(2),Rjudge,
       latestLeft[0], latestLeft[1], Lvec.toFixed(2),Ljudge,
       declaration,
-      result
+      result,
+      phase
     ]);
   });
 
@@ -153,13 +156,16 @@ async function countdown(sec){
 async function runRepeat(){
   for(let i=1;i<=10;i++){
     /* N 5秒 */
+    phase="N";
     document.body.style.background="#eaf7f3";
     await countdown(5);
 
     /* 組む 10秒 */
+    phase="cross";
     document.body.style.background="#ffcccc";
     await countdown(10);
   }
+  phase="idle";
   document.body.style.background="#eaf7f3";
   countdownDisplay.textContent="完了";
 }
