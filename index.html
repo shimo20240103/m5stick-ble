@@ -34,7 +34,7 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
 </div>
 
 <div class="controls">
-  <button onclick="runRepeat()">5秒組む→5秒N ×10回</button>
+  <button onclick="runRepeat()">N5秒 → 組む10秒 ×10回</button>
 </div>
 
 <div id="status1">右足: 未接続</div>
@@ -139,7 +139,7 @@ function calibrate(){
   alert("キャリブレーション完了");
 }
 
-/* ===== 繰り返しシーケンス ===== */
+/* ===== 繰り返し ===== */
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
 async function countdown(sec){
@@ -152,14 +152,15 @@ async function countdown(sec){
 
 async function runRepeat(){
   for(let i=1;i<=10;i++){
-    /* 組む 5秒 */
-    document.body.style.background="#ffcccc";
-    await countdown(5);
-
     /* N 5秒 */
     document.body.style.background="#eaf7f3";
     await countdown(5);
+
+    /* 組む 10秒 */
+    document.body.style.background="#ffcccc";
+    await countdown(10);
   }
+  document.body.style.background="#eaf7f3";
   countdownDisplay.textContent="完了";
 }
 
