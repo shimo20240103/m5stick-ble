@@ -47,20 +47,13 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
 </div>
 
 <script>
-/* UUID */
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-/* 最新値 */
-let latestRight = [0,0];
-let latestLeft  = [0,0];
+let latestRight=[0,0], latestLeft=[0,0];
+let baseRight=null, baseLeft=null;
 
-/* キャリブレーション値 */
-let baseRight = null;
-let baseLeft  = null;
-
-/* Excel */
-let accelData = [[
+let accelData=[[
   "Time",
   "Right_P","Right_R","Rvector",
   "Left_P","Left_R","Lvector",
@@ -68,28 +61,26 @@ let accelData = [[
   "Guess"
 ]];
 
-let currentPhase = "idle";
+let currentPhase="idle";
 
-/* 判定 */
 function judgeByVector(v){
-  if(v > 70) return "90";
-  if(v > 15) return "45";
+  if(v>70) return "90";
+  if(v>15) return "45";
   return "N";
 }
 
-/* BLE */
 async function connect(id){
-  const device = await navigator.bluetooth.requestDevice({
+  const device=await navigator.bluetooth.requestDevice({
     acceptAllDevices:true,
     optionalServices:[serviceUUID]
   });
-  const server = await device.gatt.connect();
-  const service = await server.getPrimaryService(serviceUUID);
-  const char = await service.getCharacteristic(charUUID);
+  const server=await device.gatt.connect();
+  const service=await server.getPrimaryService(serviceUUID);
+  const char=await service.getCharacteristic(charUUID);
   await char.startNotifications();
 
-  char.addEventListener("characteristicvaluechanged", e=>{
-    const [p,r] = new TextDecoder().decode(e.target.value).trim().split(",").map(Number);
+  char.addEventListener("characteristicvaluechanged",e=>{
+    const [p,r]=new TextDecoder().decode(e.target.value).trim().split(",").map(Number);
     if(isNaN(p)||isNaN(r)) return;
 
     if(id===1){
@@ -100,24 +91,20 @@ async function connect(id){
       document.getElementById("values2").textContent=`Pitch:${p.toFixed(2)} Roll:${r.toFixed(2)}`;
     }
 
-    const dR = baseRight ? [
-      latestRight[0]-baseRight[0],
-      latestRight[1]-baseRight[1]
-    ] : [0,0];
+    const dR=baseRight?[latestRight[0]-baseRight[0],latestRight[1]-baseRight[1]]:[0,0];
+    const dL=baseLeft ?[latestLeft[0]-baseLeft[0], latestLeft[1]-baseLeft[1]] :[0,0];
 
-    const dL = baseLeft ? [
-      latestLeft[0]-baseLeft[0],
-      latestLeft[1]-baseLeft[1]
-    ] : [0,0];
+    const Rvec=Math.sqrt(dR[0]*dR[0]+dR[1]*dR[1]);
+    const Lvec=Math.sqrt(dL[0]*dL[0]+dL[1]*dL[1]);
 
-    const Rvec = Math.sqrt(dR[0]*dR[0]+dR[1]*dR[1]);
-    const Lvec = Math.sqrt(dL[0]*dL[0]+dL[1]*dL[1]);
+    const judgeR=judgeByVector(Rvec);
+    const judgeL=judgeByVector(Lvec);
 
-    let guess="";
-    if(currentPhase.startsWith("R")) guess=judgeByVector(Rvec);
-    if(currentPhase.startsWith("L")) guess=judgeByVector(Lvec);
+    let guess="-";
+    if(currentPhase.startsWith("R")) guess=judgeR;
+    else if(currentPhase.startsWith("L")) guess=judgeL;
 
-    document.getElementById("guessDisplay").textContent="判定: "+(guess||"-");
+    document.getElementById("guessDisplay").textContent="判定: "+guess;
 
     accelData.push([
       new Date().toLocaleTimeString(),
@@ -128,22 +115,16 @@ async function connect(id){
     ]);
   });
 
-  document.getElementById("status"+id).textContent =
+  document.getElementById("status"+id).textContent=
     `${id===1?"右":"左"}足 接続完了`;
 }
 
-/* キャリブレーション */
 function calibrate(){
-  baseRight = [...latestRight];
-  baseLeft  = [...latestLeft];
-  alert("キャリブレーション完了（Pitch / Roll を初期値として記憶）");
+  baseRight=[...latestRight];
+  baseLeft =[...latestLeft];
+  alert("キャリブレーション完了");
 }
 
-/* 以下 既存処理（変更なし） */
-function playBeep(){/* 省略：元コードと同じ */}
-function startCountdown(sec){/* 元コードと同じ */}
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-async function runSequence(side,target){/* 元コードと同じ */}
 function downloadExcel(){
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(accelData);
