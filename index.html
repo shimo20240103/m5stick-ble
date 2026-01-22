@@ -112,21 +112,23 @@ async function connect(id){
     const Lvec = Math.sqrt(dL[0]*dL[0] + dL[1]*dL[1]);
 
     /* ===== 判定 ===== */
-    let result = "N";
+    let guess = "N";
 
     if(currentPhase.startsWith("R")){
-      if(Rvec > 70) result = "90";
-      else if(Rvec > 15) result = "45";
+      if(Rvec > 70) guess = "R90";
+      else if(Rvec > 15) guess = "R45";
+      else guess = "RN";
     }
 
     if(currentPhase.startsWith("L")){
-      if(Lvec > 70) result = "90";
-      else if(Lvec > 15) result = "45";
+      if(Lvec > 70) guess = "L90";
+      else if(Lvec > 15) guess = "L45";
+      else guess = "LN";
     }
 
     /* ===== 表示 ===== */
     document.getElementById("guessDisplay").textContent =
-      "判定: " + result;
+      "判定: " + guess;
 
     /* ===== 保存 ===== */
     accelData.push([
@@ -134,7 +136,7 @@ async function connect(id){
       latestRight[0], latestRight[1], Rvec.toFixed(2),
       latestLeft[0],  latestLeft[1],  Lvec.toFixed(2),
       currentPhase,
-      result
+      guess
     ]);
   });
 
