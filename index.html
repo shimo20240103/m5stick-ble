@@ -34,10 +34,10 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
 <pre id="values2">Pitch:0.00 Roll:0.00</pre>
 
 <div class="controls">
-  <button onclick="runSequence('right','45')">右: N → 45 → rest</button>
-  <button onclick="runSequence('right','90')">右: N → 90 → rest</button>
-  <button onclick="runSequence('left','45')">左: N → 45 → rest</button>
-  <button onclick="runSequence('left','90')">左: N → 90 → rest</button>
+  <button onclick="runSequence('right','45')">右: N → 45</button>
+  <button onclick="runSequence('right','90')">右: N → 90</button>
+  <button onclick="runSequence('left','45')">左: N → 45</button>
+  <button onclick="runSequence('left','90')">左: N → 90</button>
 </div>
 
 <div id="currentPhaseDisplay">現在のフェーズ: idle</div>
@@ -111,19 +111,17 @@ async function connect(id){
     const Rvec = Math.sqrt(dR[0]*dR[0] + dR[1]*dR[1]);
     const Lvec = Math.sqrt(dL[0]*dL[0] + dL[1]*dL[1]);
 
-    /* ===== ★唯一の判定（if文） ===== */
+    /* ===== 判定 ===== */
     let result = "N";
 
     if(currentPhase.startsWith("R")){
       if(Rvec > 70) result = "90";
       else if(Rvec > 15) result = "45";
-      else result = "N";
     }
 
     if(currentPhase.startsWith("L")){
       if(Lvec > 70) result = "90";
       else if(Lvec > 15) result = "45";
-      else result = "N";
     }
 
     /* ===== 表示 ===== */
@@ -162,9 +160,14 @@ function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
 async function runSequence(side,target){
   const p = side==="left"?"L":"R";
-  setPhase(p+"N");     await sleep(10000);
-  setPhase(p+target); await sleep(10000);
-  setPhase(p+"rest"); await sleep(10000);
+
+  setPhase(p+"N");        // N：5秒
+  await sleep(5000);
+
+  setPhase(p+target);    // 足組み：10秒
+  await sleep(10000);
+
+  setPhase("idle");
 }
 
 /* ===== Excel ===== */
