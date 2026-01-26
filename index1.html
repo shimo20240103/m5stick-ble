@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>M5StickC 足組みデータ取得（実験用）</title>
+<title>M5StickC 足組みデータ取得（キャリブ差分判定版）</title>
 <style>
 body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
 h1 { background:#a7ffeb; margin:0; padding:18px 0; border-radius:0 0 14px 14px; }
@@ -19,7 +19,7 @@ pre { display:inline-block; background:#b2dfdb; padding:8px 14px; border-radius:
 
 <body>
 
-<h1>M5StickC 足組みデータ取得（実験用　閾値1/4）</h1>
+<h1>M5StickC 足組みデータ取得（キャリブレーション差分判定）</h1>
 
 <div class="controls">
   <button onclick="connect(1)">右足 接続</button>
@@ -54,26 +54,19 @@ const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
 /* ===== 状態 ===== */
 let latestRight=[0,0], latestLeft=[0,0];
-let baseRight=null, baseLeft=null;
+let baseRight=null, baseLeft=null; // キャリブレーション値
 let declaration="none";
 let phase="idle"; // idle / N / cross
 
 /* ===== Excel ===== */
 let accelData=[[
   "Time",
-  "Right_P","Right_R","Rvec","Rjudge",
-  "Left_P","Left_R","Lvec","Ljudge",
+  "Right_P","Right_R","Delta_P","Delta_R","Rjudge",
+  "Left_P","Left_R","Delta_P","Delta_R","Ljudge",
   "Declaration",
   "Guess",
   "Phase"
 ]];
-
-/* ===== 判定関数 ===== */
-function judge(vec, side){
-  if(vec > 42) return side+"90";
-  if(vec > 8)  return side+"45";
-  return side+"N";
-}
 
 /* ===== 宣言 ===== */
 function toggleDeclare(side){
@@ -93,10 +86,11 @@ async function connect(id){
   const char = await service.getCharacteristic(charUUID);
   await char.startNotifications();
 
-  char.addEventListener("characteristicvaluechanged",e=>{
-    const [p,r] = new TextDecoder().decode(e.target.value).trim().split(",").map(Number);
-    if(isNaN(p)||isNaN(r)) return;
+  char.addEventListener("characteristicvaluechanged", e => {
+    const [p, r] = new TextDecoder().decode(e.target.value).trim().split(",").map(Number);
+    if (isNaN(p) || isNaN(r)) return;
 
+    // 最新値を更新
     if(id===1){
       latestRight=[p,r];
       values1.textContent=`Pitch:${p.toFixed(2)} Roll:${r.toFixed(2)}`;
@@ -105,30 +99,35 @@ async function connect(id){
       values2.textContent=`Pitch:${p.toFixed(2)} Roll:${r.toFixed(2)}`;
     }
 
-    const dR=baseRight?[latestRight[0]-baseRight[0],latestRight[1]-baseRight[1]]:[0,0];
-    const dL=baseLeft ?[latestLeft[0]-baseLeft[0], latestLeft[1]-baseLeft[1]]:[0,0];
+    // ===== キャリブレーション差分を計算 =====
+    let deltaR_P = baseRight ? (latestRight[0]-baseRight[0]) : 0;
+    let deltaR_R = baseRight ? (latestRight[1]-baseRight[1]) : 0;
+    let deltaL_P = baseLeft  ? (latestLeft[0]-baseLeft[0])  : 0;
+    let deltaL_R = baseLeft  ? (latestLeft[1]-baseLeft[1])  : 0;
 
-    const Rvec=Math.hypot(dR[0],dR[1]);
-    const Lvec=Math.hypot(dL[0],dL[1]);
+    // ===== 判定: Delta_P < -9 && Delta_R < -30 =====
+    let result = "N"; // デフォルト
+    let Rjudge = "N";
+    let Ljudge = "N";
 
-    const Rjudge=judge(Rvec,"R");
-    const Ljudge=judge(Lvec,"L");
+    if(deltaR_P < -9 && deltaR_R < -30){
+      Rjudge = "R_cross";
+    }
+    if(deltaL_P < -9 && deltaL_R < -30){
+      Ljudge = "L_cross";
+    }
 
-    let result = "N";
-let detail = "N";
+    if(Rjudge !== "N" || Ljudge !== "N"){
+      result = Rjudge !== "N" ? Rjudge : Ljudge;
+    }
 
-if (Rvec > 15 || Lvec > 15) {
-  detail = (Rvec >= Lvec) ? Rjudge : Ljudge;
-  result = "足を組んでいます";
-}
+    guessDisplay.textContent = "判定: " + result;
 
-guessDisplay.textContent = "判定: " + result;
-
-
+    // データ保存
     accelData.push([
       new Date().toLocaleTimeString(),
-      latestRight[0],latestRight[1],Rvec.toFixed(2),Rjudge,
-      latestLeft[0], latestLeft[1], Lvec.toFixed(2),Ljudge,
+      latestRight[0], latestRight[1], deltaR_P.toFixed(2), deltaR_R.toFixed(2), Rjudge,
+      latestLeft[0], latestLeft[1], deltaL_P.toFixed(2), deltaL_R.toFixed(2), Ljudge,
       declaration,
       result,
       phase
