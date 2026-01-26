@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>M5StickC 足組みデータ取得（実験用　閾値1/4）</title>
+<title>M5StickC 足組みデータ取得（実験用）</title>
 <style>
 body { font-family: 'Arial', sans-serif; background:#eaf7f3; color:#004d40; text-align:center; margin:0; padding:0; }
 h1 { background:#a7ffeb; margin:0; padding:18px 0; border-radius:0 0 14px 14px; }
@@ -118,7 +118,7 @@ async function connect(id){
     if(Rvec>15 || Lvec>15){
       result = (Rvec>=Lvec)?Rjudge:Ljudge;
     }
-    if(result=Rjudge||result=Ljudge){ 
+    if(result==Rjudge||result==Ljudge){ 
     result = "足を組んでいます"
     }
     
