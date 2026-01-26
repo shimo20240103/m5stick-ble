@@ -114,16 +114,16 @@ async function connect(id){
     const Rjudge=judge(Rvec,"R");
     const Ljudge=judge(Lvec,"L");
 
-    let result="N";
-    if(Rvec>15 || Lvec>15){
-      result = (Rvec>=Lvec)?Rjudge:Ljudge;
-    }
-    if(result==Rjudge||result==Ljudge){ 
-    result = "足を組んでいます"
-    }
-    
+    let result = "通常着座";
+let detail = "N";
 
-    guessDisplay.textContent="判定: "+result;
+if (Rvec > 15 || Lvec > 15) {
+  detail = (Rvec >= Lvec) ? Rjudge : Ljudge;
+  result = "足を組んでいます";
+}
+
+guessDisplay.textContent = "判定: " + result;
+
 
     accelData.push([
       new Date().toLocaleTimeString(),
