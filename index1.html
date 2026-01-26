@@ -118,6 +118,10 @@ async function connect(id){
     if(Rvec>15 || Lvec>15){
       result = (Rvec>=Lvec)?Rjudge:Ljudge;
     }
+    if(result=Rjudge||result=Ljudge){ 
+    result = "足を組んでいます"
+    }
+    
 
     guessDisplay.textContent="判定: "+result;
 
