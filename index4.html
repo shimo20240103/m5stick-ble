@@ -93,22 +93,22 @@ pre {
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-/* ===== 閾値 ===== */
+/* ===== 閾値（角度[deg]） ===== */
 const THRESHOLD = 12;
 
 /* ===== 状態 ===== */
 let latestRight=[0,0], latestLeft=[0,0];
 let baseRight=null, baseLeft=null;
 let declaration="none";
-let phase="idle"; // idle / N / cross
+let phase="idle";
 
 /* ===== Excel ===== */
 let accelData=[[
   "Time",
-  "Right_P","Right_R","Rvec",
-  "Left_P","Left_R","Lvec",
+  "Right_P","Right_R","Sita_R[deg]",
+  "Left_P","Left_R","Sita_L[deg]",
   "Declaration",
-  "Posture",   // N / CROSS
+  "Posture",
   "Phase"
 ]];
 
@@ -148,20 +148,20 @@ async function connect(id){
       values2.textContent=`Pitch:${p.toFixed(2)} Roll:${r.toFixed(2)}`;
     }
 
-    const dR = baseRight
-      ? [latestRight[0]-baseRight[0], latestRight[1]-baseRight[1]]
-      : [0,0];
+    /* ===== sita = acos(cos(p)*cos(r)) [deg] ===== */
+    const sitaR = Math.acos(
+      Math.cos(latestRight[0]*Math.PI/180) *
+      Math.cos(latestRight[1]*Math.PI/180)
+    ) * 180 / Math.PI;
 
-    const dL = baseLeft
-      ? [latestLeft[0]-baseLeft[0], latestLeft[1]-baseLeft[1]]
-      : [0,0];
+    const sitaL = Math.acos(
+      Math.cos(latestLeft[0]*Math.PI/180) *
+      Math.cos(latestLeft[1]*Math.PI/180)
+    ) * 180 / Math.PI;
 
-    const Rvec = Math.hypot(dR[0], dR[1]);
-    const Lvec = Math.hypot(dL[0], dL[1]);
-
-    /* ===== 足組み二値判定 ===== */
-    let posture = "N"; // 通常座位
-    if(Rvec > THRESHOLD || Lvec > THRESHOLD){
+    /* ===== 二値判定 ===== */
+    let posture = "N";
+    if(sitaR > THRESHOLD || sitaL > THRESHOLD){
       posture = "CROSS";
     }
 
@@ -170,8 +170,8 @@ async function connect(id){
 
     accelData.push([
       new Date().toLocaleTimeString(),
-      latestRight[0], latestRight[1], Rvec.toFixed(2),
-      latestLeft[0],  latestLeft[1],  Lvec.toFixed(2),
+      latestRight[0], latestRight[1], sitaR.toFixed(2),
+      latestLeft[0],  latestLeft[1],  sitaL.toFixed(2),
       declaration,
       posture,
       phase
@@ -182,7 +182,7 @@ async function connect(id){
     `${id===1?"右":"左"}足 接続完了`;
 }
 
-/* ===== キャリブレーション ===== */
+/* ===== キャリブレーション（保持のみ） ===== */
 function calibrate(){
   baseRight=[...latestRight];
   baseLeft =[...latestLeft];
@@ -220,7 +220,7 @@ function downloadExcel(){
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(accelData);
   XLSX.utils.book_append_sheet(wb, ws, "Data");
-  XLSX.writeFile(wb, "foot_data_binary.xlsx");
+  XLSX.writeFile(wb, "foot_data_sitaDeg.xlsx");
 }
 </script>
 
