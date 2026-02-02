@@ -93,20 +93,20 @@ pre {
 const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const charUUID    = "beb5483e-36e1-4688-b7f5-ea073f74076a";
 
-/* ===== 閾値（角度[deg]） ===== */
+/* ===== 閾値（差分角度[deg]） ===== */
 const THRESHOLD = 60;
 
 /* ===== 状態 ===== */
 let latestRight=[0,0], latestLeft=[0,0];
-let baseRight=null, baseLeft=null;
+let baseSitaR=null, baseSitaL=null;
 let declaration="none";
 let phase="idle";
 
 /* ===== Excel ===== */
 let accelData=[[
   "Time",
-  "Right_P","Right_R","Sita_R[deg]",
-  "Left_P","Left_R","Sita_L[deg]",
+  "Right_P","Right_R","SitaDiff_R[deg]",
+  "Left_P","Left_R","SitaDiff_L[deg]",
   "Declaration",
   "Posture",
   "Phase"
@@ -148,7 +148,7 @@ async function connect(id){
       values2.textContent=`Pitch:${p.toFixed(2)} Roll:${r.toFixed(2)}`;
     }
 
-    /* ===== sita = acos(cos(p)*cos(r)) [deg] ===== */
+    /* ===== sitaDeg 計算 ===== */
     const sitaR = Math.acos(
       Math.cos(latestRight[0]*Math.PI/180) *
       Math.cos(latestRight[1]*Math.PI/180)
@@ -159,9 +159,13 @@ async function connect(id){
       Math.cos(latestLeft[1]*Math.PI/180)
     ) * 180 / Math.PI;
 
+    /* ===== キャリブレーション差分 ===== */
+    const diffR = (baseSitaR!==null) ? sitaR - baseSitaR : 0;
+    const diffL = (baseSitaL!==null) ? sitaL - baseSitaL : 0;
+
     /* ===== 二値判定 ===== */
     let posture = "N";
-    if(sitaR > THRESHOLD || sitaL > THRESHOLD){
+    if(diffR > THRESHOLD || diffL > THRESHOLD){
       posture = "CROSS";
     }
 
@@ -170,8 +174,8 @@ async function connect(id){
 
     accelData.push([
       new Date().toLocaleTimeString(),
-      latestRight[0], latestRight[1], sitaR.toFixed(2),
-      latestLeft[0],  latestLeft[1],  sitaL.toFixed(2),
+      latestRight[0], latestRight[1], diffR.toFixed(2),
+      latestLeft[0],  latestLeft[1],  diffL.toFixed(2),
       declaration,
       posture,
       phase
@@ -182,11 +186,19 @@ async function connect(id){
     `${id===1?"右":"左"}足 接続完了`;
 }
 
-/* ===== キャリブレーション（保持のみ） ===== */
+/* ===== キャリブレーション ===== */
 function calibrate(){
-  baseRight=[...latestRight];
-  baseLeft =[...latestLeft];
-  alert("キャリブレーション完了");
+  baseSitaR = Math.acos(
+    Math.cos(latestRight[0]*Math.PI/180) *
+    Math.cos(latestRight[1]*Math.PI/180)
+  ) * 180 / Math.PI;
+
+  baseSitaL = Math.acos(
+    Math.cos(latestLeft[0]*Math.PI/180) *
+    Math.cos(latestLeft[1]*Math.PI/180)
+  ) * 180 / Math.PI;
+
+  alert("キャリブレーション完了（角度基準を0°に設定）");
 }
 
 /* ===== 繰り返し制御 ===== */
@@ -220,7 +232,7 @@ function downloadExcel(){
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(accelData);
   XLSX.utils.book_append_sheet(wb, ws, "Data");
-  XLSX.writeFile(wb, "foot_data_sitaDeg.xlsx");
+  XLSX.writeFile(wb, "foot_data_sitaDiff.xlsx");
 }
 </script>
 
